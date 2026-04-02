@@ -140,10 +140,18 @@ def _extract_best_sentence(query: str, context: str, vectorizer: TfidfVectorizer
     Falls back to the full context if splitting fails.
     """
     import nltk
+    
+    # 检查并下载 punkt
     try:
         nltk.data.find("tokenizers/punkt")
     except LookupError:
         nltk.download("punkt", quiet=True)
+        
+    # [新增] 检查并下载 punkt_tab (适配新版 NLTK)
+    try:
+        nltk.data.find("tokenizers/punkt_tab")
+    except LookupError:
+        nltk.download("punkt_tab", quiet=True)
 
     from nltk.tokenize import sent_tokenize
     sentences = sent_tokenize(context)

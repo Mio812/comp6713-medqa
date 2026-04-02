@@ -209,21 +209,19 @@ class PubMedBERTQA:
         self._build_pipeline()
 
     def _build_pipeline(self) -> None:
-        """Load the saved model using the explicit Pipeline class."""
-        from transformers import QuestionAnsweringPipeline, AutoModelForQuestionAnswering
+        from transformers import AutoModelForQuestionAnswering, AutoTokenizer
+        import torch
+
+        model_path = str(self.output_dir)
+    
+        self.model = AutoModelForQuestionAnswering.from_pretrained(model_path)
+        self.tokenizer = AutoTokenizer.from_pretrained(model_path)
         
-        # Explicitly load model and tokenizer
-        model = AutoModelForQuestionAnswering.from_pretrained(str(self.output_dir))
-        tokenizer = AutoTokenizer.from_pretrained(str(self.output_dir))
+      
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.model.to(self.device)
+        self.model.eval() 
         
-        device = 0 if torch.cuda.is_available() else -1
-        
-        # Manually initialize the pipeline
-        self.qa_pipeline = QuestionAnsweringPipeline(
-            model=model, 
-            tokenizer=tokenizer, 
-            device=device
-        )
 
     def load(self) -> bool:
         """Load fine-tuned model from disk. Returns True if checkpoint exists."""
@@ -237,24 +235,48 @@ class PubMedBERTQA:
 
     def predict(self, question: str, context: str) -> dict[str, Any]:
         """
-        Extract the answer span for *question* from *context*.
-
-        Returns a dict with:
-            predicted_answer : extracted span string
-            score            : model confidence score
+        通过手动前向计算（Manual Forward Pass）提取答案，不依赖 pipeline。
         """
-        if self.qa_pipeline is None:
-            raise RuntimeError("Model not loaded. Call fine_tune() or load() first.")
+        if self.model is None or self.tokenizer is None:
+            raise RuntimeError("Model/Tokenizer not loaded. Call fine_tune() or load() first.")
 
-        context = truncate_context(clean_text(context), clean_text(question), self.tokenizer)
-        result = self.qa_pipeline(
-            question=clean_text(question),
-            context=context,
-            max_answer_len=200,
-        )
+        # 1. 清理数据
+        question = clean_text(question)
+        context = truncate_context(clean_text(context), question, self.tokenizer)
+
+        # 2. 编码输入并移至相应设备
+        inputs = self.tokenizer(
+            question, 
+            context, 
+            return_tensors="pt", 
+            truncation="only_second", 
+            max_length=512
+        ).to(self.device)
+
+        # 3. 推理（不计算梯度，节省显存）
+        with torch.no_grad():
+            outputs = self.model(**inputs)
+
+        # 4. 获取概率最大的起始和结束位置
+        answer_start = torch.argmax(outputs.start_logits)
+        answer_end = torch.argmax(outputs.end_logits)
+
+        # 5. 计算简易置信度分数
+        start_prob = torch.max(torch.softmax(outputs.start_logits, dim=-1)).item()
+        end_prob = torch.max(torch.softmax(outputs.end_logits, dim=-1)).item()
+        confidence_score = (start_prob + end_prob) / 2
+
+        # 6. 解码 Token
+        all_tokens = self.tokenizer.convert_ids_to_tokens(inputs.input_ids[0])
+        # 注意：索引要加 1 因为切片是不包含结尾的
+        answer = self.tokenizer.convert_tokens_to_string(all_tokens[answer_start : answer_end + 1])
+        
+        # 移除特殊占位符
+        answer = answer.replace("[CLS]", "").replace("[SEP]", "").strip()
+
         return {
-            "predicted_answer": result["answer"],
-            "score":            result["score"],
+            "predicted_answer": answer if answer else "No answer found",
+            "score": confidence_score,
         }
 
     def batch_predict(
