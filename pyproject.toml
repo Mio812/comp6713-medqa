@@ -1,0 +1,60 @@
+[project]
+name = "comp6713-medqa"
+version = "0.1.0"
+description = "Medical Literature QA System - COMP6713 Group Project"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    # Data
+    "datasets>=2.19.0",
+    "pandas>=2.2.0",
+
+    # NLP & Models
+    "transformers>=4.40.0",
+    "torch>=2.2.0",
+    "sentence-transformers>=3.0.0",
+    "evaluate>=0.4.0",
+    "bert-score>=0.3.13",
+
+    # RAG & Vector Store
+    "langchain>=0.2.0",
+    "langchain-community>=0.2.0",
+    "langchain-huggingface>=0.0.3",
+    "chromadb>=0.5.0",
+    "faiss-cpu>=1.8.0",
+
+    # Retrieval & Reranking
+    "FlagEmbedding>=1.2.9",
+
+    # Baseline
+    "scikit-learn>=1.4.0",
+    "nltk>=3.8.0",
+
+    # Demo & CLI
+    "gradio>=4.36.0",
+
+    # Utilities
+    "tqdm>=4.66.0",
+    "python-dotenv>=1.0.0",
+    "requests>=2.31.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "jupyter>=1.0.0",
+    "ipykernel>=6.29.0",
+    "notebook>=7.2.0",
+]
+
+[project.scripts]
+medqa = "medqa.cli:main"
+
+[tool.uv]
+dev-dependencies = [
+    "jupyter>=1.0.0",
+    "ipykernel>=6.29.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
