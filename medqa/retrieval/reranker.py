@@ -1,6 +1,9 @@
 """
 Cross-encoder reranker using BAAI/bge-reranker-v2-m3.
 
+Uses sentence-transformers CrossEncoder instead of FlagEmbedding for
+better compatibility with newer versions of transformers.
+
 After dense retrieval returns ~10 candidate chunks, the reranker scores
 each (query, chunk) pair with a cross-encoder and keeps the top-k.
 Cross-encoders are slower but significantly more accurate than bi-encoders
@@ -15,7 +18,7 @@ from medqa.data.preprocessor import clean_text
 
 class Reranker:
     """
-    BGE cross-encoder reranker.
+    BGE cross-encoder reranker via sentence-transformers.
 
     Usage:
         reranker = Reranker()
@@ -29,9 +32,9 @@ class Reranker:
 
     def load(self) -> None:
         """Load the cross-encoder model (downloaded automatically on first run)."""
-        from FlagEmbedding import FlagReranker
+        from sentence_transformers import CrossEncoder
         print(f"[Reranker] Loading {self.model_name} ...")
-        self.model = FlagReranker(self.model_name, use_fp16=True)
+        self.model = CrossEncoder(self.model_name, max_length=512)
         print("[Reranker] Ready.")
 
     def rerank(
@@ -59,7 +62,7 @@ class Reranker:
 
         q = clean_text(query)
         pairs = [[q, clean_text(c["text"])] for c in candidates]
-        scores = self.model.compute_score(pairs, normalize=True)
+        scores = self.model.predict(pairs)
 
         # Attach scores and sort descending
         for cand, score in zip(candidates, scores):
