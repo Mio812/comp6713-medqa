@@ -11,7 +11,10 @@ from typing import Any
 import chromadb
 from chromadb.config import Settings
 from sentence_transformers import SentenceTransformer
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+try:
+    from langchain_text_splitters import RecursiveCharacterTextSplitter
+except ImportError:
+    from langchain.text_splitter import RecursiveCharacterTextSplitter
 
 from medqa.config import CHROMA_DIR, EMBEDDING_MODEL, RAG
 from medqa.data.preprocessor import clean_text
