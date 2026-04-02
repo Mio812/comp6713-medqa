@@ -69,38 +69,48 @@ def load_pubmedqa_unlabeled() -> list[dict[str, Any]]:
 
 # ── BioASQ ───────────────────────────────────────────────────────────────────
 
+def _parse_bioasq_text(text: str) -> tuple[str, str]:
+    """
+    Parse the BioASQ 'text' field which has format:
+        <answer> ... <context> ...
+    Returns (answer, context).
+    """
+    import re
+    answer_match = re.search(r"<answer>\s*(.*?)\s*(?:<context>|$)", text, re.DOTALL)
+    context_match = re.search(r"<context>\s*(.*)", text, re.DOTALL)
+    answer  = answer_match.group(1).strip()  if answer_match  else ""
+    context = context_match.group(1).strip() if context_match else text
+    return answer, context
+
+
 def load_bioasq() -> list[dict[str, Any]]:
     """
     Load BioASQ from HuggingFace (no registration required).
 
-    Normalises the varied BioASQ answer formats into the same schema as
-    PubMedQA so both datasets can be used interchangeably downstream.
+    The kroshan/BioASQ dataset has two fields per item:
+        question : the biomedical question string
+        text     : '<answer> ... <context> ...' combined field
+
+    This function parses those into the same schema as PubMedQA so both
+    datasets can be used interchangeably downstream.
     """
-    raw = load_dataset(BIOASQ_DATASET, trust_remote_code=True)
+    raw = load_dataset(BIOASQ_DATASET)
 
     records = []
     for split_name in raw:
         for item in raw[split_name]:
-            # BioASQ stores snippets as evidence context
-            snippets = item.get("snippets", [])
-            if isinstance(snippets, list):
-                context = " ".join(
-                    s.get("text", "") if isinstance(s, dict) else str(s)
-                    for s in snippets
-                )
-            else:
-                context = str(snippets)
+            question = item.get("question", "").strip()
+            raw_text = item.get("text", "")
+            answer, context = _parse_bioasq_text(raw_text)
 
-            # ideal_answer can be a list; join into one string
-            ideal = item.get("ideal_answer", "") or ""
-            if isinstance(ideal, list):
-                ideal = " ".join(ideal)
+            if not question or not context:
+                continue
 
             records.append({
-                "question":    item.get("body", ""),
+                "question":    question,
                 "context":     context,
-                "answer":      ideal,
-                "answer_type": item.get("type", ""),   # factoid / yesno / list / summary
+                "answer":      answer,
+                "answer_type": "factoid",   # kroshan/BioASQ is factoid-style
                 "source":      "bioasq",
             })
 
