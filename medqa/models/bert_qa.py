@@ -49,43 +49,50 @@ class PubMedBERTQA:
 
     # ── Dataset preparation ───────────────────────────────────────────────────
 
+    # ── Dataset preparation ───────────────────────────────────────────────────
+
     def _prepare_dataset(self, records: list[dict[str, Any]]) -> Dataset:
         """
-        Convert raw records into the token-level features expected by BERT QA.
-
-        For each record we:
-          1. Clean question and context.
-          2. Truncate context to fit within max_length.
-          3. Locate the answer string within the context to get char offsets.
-          4. Tokenise with overflow handling (stride=128).
+        Convert raw records into token-level features for BERT QA.
+        Includes robust cleaning and boundary checks to prevent truncation errors.
         """
         processed = []
         for r in records:
-            question = clean_text(r["question"])
-            context  = clean_text(r["context"])
-            answer   = clean_text(r.get("answer", ""))
+            # 1. Ensure all fields are strings and clean them
+            question = clean_text(str(r.get("question", ""))).strip()
+            context  = clean_text(str(r.get("context", ""))).strip()
+            answer   = clean_text(str(r.get("answer", ""))).strip()
 
-            # Truncate context so the pair fits in 512 tokens
+            # 2. Strict minimum length check for the tokenizer's logic
+            if len(question) < 2: question = "Medical question placeholder."
+            if len(context) < 2:  context  = "Medical context placeholder."
+
+            # 3. Truncate context to fit within the 512 token limit
             context = truncate_context(context, question, self.tokenizer)
 
-            # Find the answer start position in the context (char level)
-            answer_start = context.lower().find(answer.lower()[:50])  # first 50 chars
+            # Locate answer start position (char-level)
+            answer_start = context.lower().find(answer.lower()[:50])
             if answer_start == -1:
-                answer_start = 0  # fallback: mark answer at beginning
+                answer_start = 0
 
             processed.append({
-                "question":       question,
-                "context":        context,
-                "answers":        {"text": [answer], "answer_start": [answer_start]},
+                "question": question,
+                "context": context,
+                "answers": {"text": [answer], "answer_start": [answer_start]},
             })
 
         dataset = Dataset.from_list(processed)
 
         def tokenize_fn(examples):
-            return self.tokenizer(
-                examples["question"],
-                examples["context"],
-                truncation="only_second",
+            # 1. 依然保留安全清理逻辑
+            qs = [str(q) if len(str(q)) > 1 else "Question placeholder" for q in examples["question"]]
+            ctxs = [str(c) if len(str(c)) > 1 else "Context placeholder" for c in examples["context"]]
+
+            # 2. 修改核心：将 truncation 策略改为 'longest_first'
+            tokenized_examples = self.tokenizer(
+                qs,
+                ctxs,
+                truncation="longest_first", # 改为这个，处理“巨型问题”
                 max_length=512,
                 stride=128,
                 return_overflowing_tokens=True,
@@ -93,7 +100,59 @@ class PubMedBERTQA:
                 padding="max_length",
             )
 
-        tokenized = dataset.map(tokenize_fn, batched=True, remove_columns=dataset.column_names)
+            # --- 以下对齐逻辑保持不变 ---
+            sample_mapping = tokenized_examples.pop("overflow_to_sample_mapping")
+            offset_mapping = tokenized_examples.pop("offset_mapping")
+            tokenized_examples["start_positions"] = []
+            tokenized_examples["end_positions"] = []
+
+            for i, offsets in enumerate(offset_mapping):
+                input_ids = tokenized_examples["input_ids"][i]
+                cls_index = input_ids.index(self.tokenizer.cls_token_id)
+                sequence_ids = tokenized_examples.sequence_ids(i)
+                sample_index = sample_mapping[i]
+                answers = examples["answers"][sample_index]
+                
+                if len(answers["answer_start"]) == 0 or answers["answer_start"][0] == -1:
+                    tokenized_examples["start_positions"].append(cls_index)
+                    tokenized_examples["end_positions"].append(cls_index)
+                else:
+                    start_char = answers["answer_start"][0]
+                    end_char = start_char + len(answers["text"][0])
+                    
+                    # 寻找 context 的起始和结束 token
+                    token_start_index = 0
+                    while token_start_index < len(sequence_ids) and sequence_ids[token_start_index] != 1:
+                        token_start_index += 1
+                    token_end_index = len(input_ids) - 1
+                    while token_end_index >= 0 and sequence_ids[token_end_index] != 1:
+                        token_end_index -= 1
+                    
+                    # 边界安全检查
+                    if (token_start_index >= len(offsets) or token_end_index < 0 or 
+                        not (offsets[token_start_index][0] <= start_char and offsets[token_end_index][1] >= end_char)):
+                        tokenized_examples["start_positions"].append(cls_index)
+                        tokenized_examples["end_positions"].append(cls_index)
+                    else:
+                        curr_start = token_start_index
+                        while curr_start < len(offsets) and offsets[curr_start][0] <= start_char:
+                            curr_start += 1
+                        tokenized_examples["start_positions"].append(curr_start - 1)
+                        
+                        curr_end = token_end_index
+                        while curr_end >= 0 and offsets[curr_end][1] >= end_char:
+                            curr_end -= 1
+                        tokenized_examples["end_positions"].append(curr_end + 1)
+
+            return tokenized_examples
+
+        # Map the function and drop raw text columns
+        tokenized = dataset.map(
+            tokenize_fn, 
+            batched=True, 
+            remove_columns=dataset.column_names,
+            desc="Tokenizing and aligning answers"
+        )
         return tokenized
 
     # ── Fine-tuning ───────────────────────────────────────────────────────────
@@ -119,12 +178,12 @@ class PubMedBERTQA:
             output_dir=str(self.output_dir),
             learning_rate=BERT_FINETUNE["learning_rate"],
             num_train_epochs=BERT_FINETUNE["num_train_epochs"],
+            eval_strategy="epoch" if eval_dataset else "no", 
+            save_strategy="epoch",
             per_device_train_batch_size=BERT_FINETUNE["per_device_train_batch_size"],
             per_device_eval_batch_size=BERT_FINETUNE["per_device_eval_batch_size"],
             warmup_steps=BERT_FINETUNE["warmup_steps"],
             weight_decay=BERT_FINETUNE["weight_decay"],
-            evaluation_strategy="epoch" if eval_dataset else "no",
-            save_strategy="epoch",
             load_best_model_at_end=True if eval_dataset else False,
             logging_dir=str(self.output_dir / "logs"),
             logging_steps=50,
@@ -150,13 +209,20 @@ class PubMedBERTQA:
         self._build_pipeline()
 
     def _build_pipeline(self) -> None:
-        """Load the saved model into a HuggingFace QA pipeline."""
+        """Load the saved model using the explicit Pipeline class."""
+        from transformers import QuestionAnsweringPipeline, AutoModelForQuestionAnswering
+        
+        # Explicitly load model and tokenizer
+        model = AutoModelForQuestionAnswering.from_pretrained(str(self.output_dir))
+        tokenizer = AutoTokenizer.from_pretrained(str(self.output_dir))
+        
         device = 0 if torch.cuda.is_available() else -1
-        self.qa_pipeline = pipeline(
-            "question-answering",
-            model=str(self.output_dir),
-            tokenizer=str(self.output_dir),
-            device=device,
+        
+        # Manually initialize the pipeline
+        self.qa_pipeline = QuestionAnsweringPipeline(
+            model=model, 
+            tokenizer=tokenizer, 
+            device=device
         )
 
     def load(self) -> bool:
