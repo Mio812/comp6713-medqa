@@ -1,7 +1,7 @@
 """
-Data loader for PubMedQA and BioASQ datasets.
+Data loader for PubMedQA, BioASQ, PubMedQA-Unlabeled, and MedQA-USMLE datasets.
 
-Both datasets are loaded directly from HuggingFace — no registration required.
+All datasets are loaded directly from HuggingFace — no registration required.
 Each loader returns a standardised dict with keys:
     question (str), context (str), answer (str), answer_type (str)
 """
@@ -9,6 +9,8 @@ Each loader returns a standardised dict with keys:
 from datasets import load_dataset
 from typing import Any
 from medqa.config import PUBMEDQA_DATASET, PUBMEDQA_CONFIG, BIOASQ_DATASET
+
+MEDQA_USMLE_DATASET = "GBaker/MedQA-USMLE-4-options"
 
 
 # ── PubMedQA ─────────────────────────────────────────────────────────────────
@@ -118,8 +120,68 @@ def load_bioasq() -> list[dict[str, Any]]:
     return records
 
 
-# ── Combined loader ───────────────────────────────────────────────────────────
+# ── MedQA-USMLE ──────────────────────────────────────────────────────────────
+
+def load_medqa_usmle() -> list[dict[str, Any]]:
+    """
+    Load MedQA-USMLE 4-option multiple choice dataset (~12k items).
+
+    Each item is a US medical licensing exam question with 4 options and
+    a correct answer. We format the options into the context field so the
+    downstream models can reason over them.
+
+    Format normalised to match PubMedQA schema:
+        question    : the exam question stem
+        context     : the 4 answer options formatted as plain text
+        answer      : the correct option text
+        answer_type : 'mcq'
+        source      : 'medqa_usmle'
+    """
+    raw = load_dataset(MEDQA_USMLE_DATASET)
+
+    records = []
+    for split_name in raw:
+        for item in raw[split_name]:
+            question = item.get("question", "").strip()
+            options  = item.get("options", {})   # dict: {"A": "...", "B": "...", ...}
+            answer_key = item.get("answer_idx", item.get("answer", ""))
+
+            if not question:
+                continue
+
+            # Format options as readable context
+            if isinstance(options, dict):
+                context = " | ".join(f"{k}: {v}" for k, v in options.items())
+                answer  = options.get(str(answer_key), str(answer_key))
+            else:
+                context = str(options)
+                answer  = str(answer_key)
+
+            records.append({
+                "question":    question,
+                "context":     context,
+                "answer":      answer,
+                "answer_type": "mcq",
+                "source":      "medqa_usmle",
+            })
+
+    print(f"[MedQA-USMLE] Loaded {len(records)} records.")
+    return records
+
+
+# ── Combined loaders ──────────────────────────────────────────────────────────
 
 def load_all() -> list[dict[str, Any]]:
-    """Return PubMedQA + BioASQ merged into a single list."""
-    return load_pubmedqa() + load_bioasq()
+    """
+    Return PubMedQA + BioASQ + MedQA-USMLE merged into a single list.
+    Total: ~21k labelled QA pairs.
+    """
+    return load_pubmedqa() + load_bioasq() + load_medqa_usmle()
+
+
+def load_rag_corpus() -> list[dict[str, Any]]:
+    """
+    Return the full corpus for building the RAG vector store.
+    Includes unlabelled PubMedQA (~61k) for richer retrieval coverage.
+    """
+    return load_pubmedqa() + load_pubmedqa_unlabeled() + load_bioasq() + load_medqa_usmle()
