@@ -8,14 +8,12 @@ dependencies = [
     # Data
     "datasets>=2.19.0",
     "pandas>=2.2.0",
-
     # NLP & Models
     "transformers>=4.40.0",
     "torch>=2.2.0",
     "sentence-transformers>=3.0.0",
     "evaluate>=0.4.0",
     "bert-score>=0.3.13",
-
     # RAG & Vector Store
     "langchain>=0.2.0",
     "langchain-community>=0.2.0",
@@ -23,20 +21,19 @@ dependencies = [
     "langchain-text-splitters>=0.2.0",
     "chromadb>=0.5.0",
     "faiss-cpu>=1.8.0",
-
     # Retrieval & Reranking (CrossEncoder via sentence-transformers)
-
     # Baseline
     "scikit-learn>=1.4.0",
     "nltk>=3.8.0",
-
     # Demo & CLI
     "gradio>=4.36.0",
-
     # Utilities
     "tqdm>=4.66.0",
     "python-dotenv>=1.0.0",
     "requests>=2.31.0",
+    "openai>=2.30.0",
+    "accelerate>=1.13.0",
+    "bitsandbytes>=0.49.2",
 ]
 
 [project.optional-dependencies]

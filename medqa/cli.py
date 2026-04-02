@@ -80,9 +80,16 @@ def _load_model(mode: str):
         return model
 
     elif mode == "rag":
-        from medqa.models.llm_qa import APILLM
+        # 1. Replace APILLM with LocalLLM
+        from medqa.models.llm_qa import LocalLLM 
         from medqa.retrieval.rag_pipeline import RAGPipeline
-        llm = APILLM()   # reads DEEPSEEK_API_KEY from .env
+        
+        # 2. Instantiate the local model
+        llm = LocalLLM() 
+        
+        # 3. CRITICAL: Call load() to load the 4-bit quantized model into VRAM
+        llm.load() 
+        
         pipeline = RAGPipeline(llm=llm)
         if pipeline.vs.count() == 0:
             print("[CLI] Vector store empty — indexing dataset ...")

@@ -39,32 +39,28 @@ def _build_prompt(question: str, context: str) -> list[dict[str, str]]:
 
 # ── Local HuggingFace backend ─────────────────────────────────────────────────
 
+# ── Local HuggingFace backend ─────────────────────────────────────────────────
+
 class LocalLLM:
     """
-    Runs Qwen2.5-7B-Instruct (or any HF chat model) locally.
-    Requires ~16 GB VRAM for full precision, or ~8 GB with 4-bit quantisation.
-
-    Usage:
-        llm = LocalLLM()
-        llm.load()
-        result = llm.predict("What causes type 2 diabetes?", context)
+    Runs Qwen2.5-14B-Instruct locally with 4-bit quantization.
+    Perfect for a 16GB VRAM GPU like the RTX 5070 Ti.
     """
 
-    def __init__(self, model_name: str = LLM_MODEL):
+    # Core Change 1: Set the default model to the 14B parameter version
+    def __init__(self, model_name: str = "Qwen/Qwen2.5-14B-Instruct"):
         self.model_name = model_name
         self.pipeline = None
 
+    # Core Change 2: Force load_in_4bit to prevent the 14B model from exceeding 16GB VRAM
     def load(self, load_in_4bit: bool = True) -> None:
         """
         Load the model into memory.
-
-        Args:
-            load_in_4bit: use bitsandbytes 4-bit quantisation to reduce VRAM usage.
         """
         import torch
         from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline, BitsAndBytesConfig
 
-        print(f"[LLM] Loading {self.model_name} ...")
+        print(f"[LLM] Loading {self.model_name} (4-bit quantization) ...")
 
         tokenizer = AutoTokenizer.from_pretrained(self.model_name)
 
@@ -72,13 +68,16 @@ class LocalLLM:
             quant_config = BitsAndBytesConfig(
                 load_in_4bit=True,
                 bnb_4bit_compute_dtype=torch.float16,
+                bnb_4bit_use_double_quant=True, # Enable double quantization for further VRAM savings
+                bnb_4bit_quant_type="nf4"       # Use nf4 data type for better quantization accuracy
             )
             model = AutoModelForCausalLM.from_pretrained(
                 self.model_name,
                 quantization_config=quant_config,
-                device_map="auto",
+                device_map="auto",              # Automatically distribute the model across available GPU memory
             )
         else:
+            print("[Warning] Running without 4-bit quantization or CUDA not found. You might OOM!")
             model = AutoModelForCausalLM.from_pretrained(
                 self.model_name,
                 torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
@@ -89,10 +88,10 @@ class LocalLLM:
             "text-generation",
             model=model,
             tokenizer=tokenizer,
-            max_new_tokens=256,
-            do_sample=False,   # greedy decoding for reproducibility
+            max_new_tokens=512, # Slightly increased max output tokens for more detailed answers
+            do_sample=False,    # Greedy decoding for reproducible, deterministic outputs
         )
-        print("[LLM] Model loaded.")
+        print("[LLM] Model loaded successfully.")
 
     def predict(self, question: str, context: str) -> dict[str, Any]:
         """Generate an answer for *question* given *context*."""
