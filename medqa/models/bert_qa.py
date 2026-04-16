@@ -1,19 +1,6 @@
-"""
-Fine-tuned PubMedBERT for extractive Question Answering.
+"""Fine-tuned PubMedBERT for extractive QA (SQuAD-style span prediction)."""
 
-Model: microsoft/BiomedNLP-PubMedBERT-base-uncased-abstract-fulltext
-Task : Span extraction — given (question, context), predict the answer span.
-
-Since PubMedQA answers are long-form rather than exact spans, we treat the
-*long_answer* field as the answer text and locate it (or the most similar
-substring) within the context for span supervision.
-
-For yes/no/maybe questions we additionally fine-tune a classification head.
-"""
-
-import os
 from pathlib import Path
-from typing import Any
 
 import torch
 from transformers import (
@@ -22,17 +9,19 @@ from transformers import (
     TrainingArguments,
     Trainer,
     DefaultDataCollator,
-    pipeline,
 )
 from datasets import Dataset
 
-from medqa.config import BERT_MODEL, BERT_FINETUNE
+from medqa._log import get_logger
+from medqa._seed import set_seed
+from medqa.config import BERT_MODEL, BERT_FINETUNE, SEED
 from medqa.data.preprocessor import clean_text, truncate_context
+
+log = get_logger("bert")
 
 
 class PubMedBERTQA:
-    """
-    Wrapper around a fine-tuned PubMedBERT extractive QA model.
+    """Wrapper around a fine-tuned PubMedBERT extractive QA model.
 
     Usage:
         model = PubMedBERTQA()
@@ -43,37 +32,36 @@ class PubMedBERTQA:
     def __init__(self, model_name: str = BERT_MODEL):
         self.model_name = model_name
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-        self.model = None          # loaded lazily or after fine-tuning
-        self.qa_pipeline = None    # HuggingFace pipeline for easy inference
+        self.model = None
+        self.qa_pipeline = None
         self.output_dir = Path(BERT_FINETUNE["output_dir"])
 
-    # ── Dataset preparation ───────────────────────────────────────────────────
+    def _prepare_dataset(self, records: list) -> Dataset:
+        """Convert raw records into token-level features for BERT QA.
 
-    # ── Dataset preparation ───────────────────────────────────────────────────
+        MedQA-USMLE MCQ records are filtered out because their context is a
+        pipe-separated option string with no span to extract.
+        """
+        mcq_skipped = sum(1 for r in records if r.get("answer_type") == "mcq")
+        if mcq_skipped:
+            log.info("Skipping %d MCQ records (incompatible with span prediction)", mcq_skipped)
+        records = [r for r in records if r.get("answer_type") != "mcq"]
 
-    def _prepare_dataset(self, records: list[dict[str, Any]]) -> Dataset:
-        """
-        Convert raw records into token-level features for BERT QA.
-        Includes robust cleaning and boundary checks to prevent truncation errors.
-        """
         processed = []
+        missing_span = 0
         for r in records:
-            # 1. Ensure all fields are strings and clean them
             question = clean_text(str(r.get("question", ""))).strip()
             context  = clean_text(str(r.get("context", ""))).strip()
             answer   = clean_text(str(r.get("answer", ""))).strip()
 
-            # 2. Strict minimum length check for the tokenizer's logic
             if len(question) < 2: question = "Medical question placeholder."
             if len(context) < 2:  context  = "Medical context placeholder."
 
-            # 3. Truncate context to fit within the 512 token limit
             context = truncate_context(context, question, self.tokenizer)
 
-            # Locate answer start position (char-level)
-            answer_start = context.lower().find(answer.lower()[:50])
+            answer_start = context.lower().find(answer.lower()[:50]) if answer else -1
             if answer_start == -1:
-                answer_start = 0
+                missing_span += 1
 
             processed.append({
                 "question": question,
@@ -81,18 +69,23 @@ class PubMedBERTQA:
                 "answers": {"text": [answer], "answer_start": [answer_start]},
             })
 
+        if missing_span:
+            pct = missing_span / len(records) * 100 if records else 0.0
+            log.info(
+                "%d/%d (%.1f%%) records have no extractable span; these train as unanswerable (CLS).",
+                missing_span, len(records), pct,
+            )
+
         dataset = Dataset.from_list(processed)
 
         def tokenize_fn(examples):
-            # 1. 依然保留安全清理逻辑
-            qs = [str(q) if len(str(q)) > 1 else "Question placeholder" for q in examples["question"]]
-            ctxs = [str(c) if len(str(c)) > 1 else "Context placeholder" for c in examples["context"]]
+            qs   = [str(q) if len(str(q)) > 1 else "Question placeholder" for q in examples["question"]]
+            ctxs = [str(c) if len(str(c)) > 1 else "Context placeholder"  for c in examples["context"]]
 
-            # 2. 修改核心：将 truncation 策略改为 'longest_first'
             tokenized_examples = self.tokenizer(
                 qs,
                 ctxs,
-                truncation="longest_first", # 改为这个，处理“巨型问题”
+                truncation="longest_first",
                 max_length=512,
                 stride=128,
                 return_overflowing_tokens=True,
@@ -100,7 +93,6 @@ class PubMedBERTQA:
                 padding="max_length",
             )
 
-            # --- 以下对齐逻辑保持不变 ---
             sample_mapping = tokenized_examples.pop("overflow_to_sample_mapping")
             offset_mapping = tokenized_examples.pop("offset_mapping")
             tokenized_examples["start_positions"] = []
@@ -112,25 +104,25 @@ class PubMedBERTQA:
                 sequence_ids = tokenized_examples.sequence_ids(i)
                 sample_index = sample_mapping[i]
                 answers = examples["answers"][sample_index]
-                
+
                 if len(answers["answer_start"]) == 0 or answers["answer_start"][0] == -1:
                     tokenized_examples["start_positions"].append(cls_index)
                     tokenized_examples["end_positions"].append(cls_index)
                 else:
                     start_char = answers["answer_start"][0]
                     end_char = start_char + len(answers["text"][0])
-                    
-                    # 寻找 context 的起始和结束 token
+
                     token_start_index = 0
                     while token_start_index < len(sequence_ids) and sequence_ids[token_start_index] != 1:
                         token_start_index += 1
                     token_end_index = len(input_ids) - 1
                     while token_end_index >= 0 and sequence_ids[token_end_index] != 1:
                         token_end_index -= 1
-                    
-                    # 边界安全检查
-                    if (token_start_index >= len(offsets) or token_end_index < 0 or 
-                        not (offsets[token_start_index][0] <= start_char and offsets[token_end_index][1] >= end_char)):
+
+                    # Boundary safety check: fall back to CLS if span is out of window
+                    if (token_start_index >= len(offsets) or token_end_index < 0 or
+                            not (offsets[token_start_index][0] <= start_char and
+                                 offsets[token_end_index][1] >= end_char)):
                         tokenized_examples["start_positions"].append(cls_index)
                         tokenized_examples["end_positions"].append(cls_index)
                     else:
@@ -138,7 +130,7 @@ class PubMedBERTQA:
                         while curr_start < len(offsets) and offsets[curr_start][0] <= start_char:
                             curr_start += 1
                         tokenized_examples["start_positions"].append(curr_start - 1)
-                        
+
                         curr_end = token_end_index
                         while curr_end >= 0 and offsets[curr_end][1] >= end_char:
                             curr_end -= 1
@@ -146,132 +138,163 @@ class PubMedBERTQA:
 
             return tokenized_examples
 
-        # Map the function and drop raw text columns
         tokenized = dataset.map(
-            tokenize_fn, 
-            batched=True, 
+            tokenize_fn,
+            batched=True,
             remove_columns=dataset.column_names,
-            desc="Tokenizing and aligning answers"
+            desc="Tokenizing and aligning answers",
         )
         return tokenized
 
-    # ── Fine-tuning ───────────────────────────────────────────────────────────
-
     def fine_tune(
         self,
-        train_records: list[dict[str, Any]],
-        eval_records: list[dict[str, Any]] | None = None,
-    ) -> None:
-        """
-        Fine-tune PubMedBERT on *train_records*.
+        train_records: list,
+        eval_records=None,
+        overrides: dict | None = None,
+        output_dir: str | None = None,
+    ) -> dict:
+        """Fine-tune PubMedBERT on train_records.
 
         Args:
             train_records : training split from loader.py
-            eval_records  : optional validation split (for early stopping)
+            eval_records  : optional validation split
+            overrides     : optional per-run overrides for BERT_FINETUNE keys.
+            output_dir    : optional override for checkpoint path.
+
+        Returns:
+            Metrics dict with train_loss and (if eval_records given) eval_loss.
         """
+        set_seed(SEED)
+
+        # Resolve hyperparameters: BERT_FINETUNE defaults + per-call overrides
+        hp = {**BERT_FINETUNE, **(overrides or {})}
+        out_dir = Path(output_dir) if output_dir else Path(hp["output_dir"])
+
         self.model = AutoModelForQuestionAnswering.from_pretrained(self.model_name)
 
         train_dataset = self._prepare_dataset(train_records)
         eval_dataset  = self._prepare_dataset(eval_records) if eval_records else None
 
         args = TrainingArguments(
-            output_dir=str(self.output_dir),
-            learning_rate=BERT_FINETUNE["learning_rate"],
-            num_train_epochs=BERT_FINETUNE["num_train_epochs"],
-            eval_strategy="epoch" if eval_dataset else "no", 
+            output_dir=str(out_dir),
+            learning_rate=hp["learning_rate"],
+            num_train_epochs=hp["num_train_epochs"],
+            eval_strategy="epoch" if eval_dataset else "no",
             save_strategy="epoch",
-            per_device_train_batch_size=BERT_FINETUNE["per_device_train_batch_size"],
-            per_device_eval_batch_size=BERT_FINETUNE["per_device_eval_batch_size"],
-            warmup_steps=BERT_FINETUNE["warmup_steps"],
-            weight_decay=BERT_FINETUNE["weight_decay"],
+            per_device_train_batch_size=hp["per_device_train_batch_size"],
+            per_device_eval_batch_size=hp["per_device_eval_batch_size"],
+            warmup_ratio=hp.get("warmup_ratio", 0.06),
+            weight_decay=hp["weight_decay"],
             load_best_model_at_end=True if eval_dataset else False,
-            logging_dir=str(self.output_dir / "logs"),
+            metric_for_best_model="eval_loss" if eval_dataset else None,
+            greater_is_better=False if eval_dataset else None,
+            logging_dir=str(out_dir / "logs"),
             logging_steps=50,
-            fp16=torch.cuda.is_available(),   # use mixed precision if GPU available
-            report_to="none",                  # disable wandb / mlflow
+            fp16=torch.cuda.is_available(),
+            report_to="none",
+            seed=SEED,
+            data_seed=SEED,
         )
 
-        trainer = Trainer(
-            model=self.model,
-            args=args,
-            train_dataset=train_dataset,
-            eval_dataset=eval_dataset,
-            data_collator=DefaultDataCollator(),
-        )
+        loss_type = hp.get("loss_type", "ce")
+        if loss_type == "focal_ls":
+            from medqa.training.custom_loss import (
+                FocalLabelSmoothingLoss, QASpanTrainer,
+            )
+            loss_fn = FocalLabelSmoothingLoss(
+                gamma=hp.get("focal_gamma", 2.0),
+                label_smoothing=hp.get("label_smoothing", 0.1),
+            )
+            log.info(
+                "Using focal_ls loss (gamma=%.2f, label_smoothing=%.2f)",
+                hp.get("focal_gamma", 2.0),
+                hp.get("label_smoothing", 0.1),
+            )
+            trainer = QASpanTrainer(
+                model=self.model,
+                args=args,
+                train_dataset=train_dataset,
+                eval_dataset=eval_dataset,
+                data_collator=DefaultDataCollator(),
+                loss_fn=loss_fn,
+            )
+        elif loss_type == "ce":
+            log.info("Using plain cross-entropy loss (HF Trainer default)")
+            trainer = Trainer(
+                model=self.model,
+                args=args,
+                train_dataset=train_dataset,
+                eval_dataset=eval_dataset,
+                data_collator=DefaultDataCollator(),
+            )
+        else:
+            raise ValueError(
+                f"Unknown loss_type: {loss_type!r}. Expected 'ce' or 'focal_ls'."
+            )
 
-        print(f"[BERT] Fine-tuning on {len(train_records)} examples ...")
-        trainer.train()
-        trainer.save_model(str(self.output_dir))
-        self.tokenizer.save_pretrained(str(self.output_dir))
-        print(f"[BERT] Model saved to {self.output_dir}")
+        log.info("Fine-tuning on %d examples (out_dir=%s) ...", len(train_records), out_dir)
+        train_result = trainer.train()
+        trainer.save_model(str(out_dir))
+        self.tokenizer.save_pretrained(str(out_dir))
+        log.info("Model saved to %s", out_dir)
 
-        # Build inference pipeline from the saved model
+        self.output_dir = out_dir
         self._build_pipeline()
 
-    def _build_pipeline(self) -> None:
-        from transformers import AutoModelForQuestionAnswering, AutoTokenizer
-        import torch
+        metrics = {"train_loss": float(train_result.training_loss)}
+        if eval_dataset:
+            eval_metrics = trainer.evaluate()
+            metrics.update({k: float(v) for k, v in eval_metrics.items()
+                            if isinstance(v, (int, float))})
+        return metrics
 
+    def _build_pipeline(self) -> None:
+        """Load the (fine-tuned) model+tokenizer from disk and set eval mode."""
         model_path = str(self.output_dir)
-    
         self.model = AutoModelForQuestionAnswering.from_pretrained(model_path)
         self.tokenizer = AutoTokenizer.from_pretrained(model_path)
-        
-      
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model.to(self.device)
-        self.model.eval() 
-        
+        self.model.eval()
 
     def load(self) -> bool:
         """Load fine-tuned model from disk. Returns True if checkpoint exists."""
         if not self.output_dir.exists():
             return False
         self._build_pipeline()
-        print(f"[BERT] Loaded fine-tuned model from {self.output_dir}")
+        log.info("Loaded fine-tuned model from %s", self.output_dir)
         return True
 
-    # ── Inference ─────────────────────────────────────────────────────────────
-
-    def predict(self, question: str, context: str) -> dict[str, Any]:
-        """
-        通过手动前向计算（Manual Forward Pass）提取答案，不依赖 pipeline。
-        """
+    def predict(self, question: str, context: str) -> dict:
+        """Extract an answer span via a manual forward pass."""
         if self.model is None or self.tokenizer is None:
-            raise RuntimeError("Model/Tokenizer not loaded. Call fine_tune() or load() first.")
+            raise RuntimeError("Model not loaded. Call fine_tune() or load() first.")
 
-        # 1. 清理数据
         question = clean_text(question)
-        context = truncate_context(clean_text(context), question, self.tokenizer)
+        context  = truncate_context(clean_text(context), question, self.tokenizer)
 
-        # 2. 编码输入并移至相应设备
         inputs = self.tokenizer(
-            question, 
-            context, 
-            return_tensors="pt", 
-            truncation="only_second", 
-            max_length=512
+            question,
+            context,
+            return_tensors="pt",
+            truncation="only_second",
+            max_length=512,
         ).to(self.device)
 
-        # 3. 推理（不计算梯度，节省显存）
         with torch.no_grad():
             outputs = self.model(**inputs)
 
-        # 4. 获取概率最大的起始和结束位置
         answer_start = torch.argmax(outputs.start_logits)
-        answer_end = torch.argmax(outputs.end_logits)
+        answer_end   = torch.argmax(outputs.end_logits)
 
-        # 5. 计算简易置信度分数
         start_prob = torch.max(torch.softmax(outputs.start_logits, dim=-1)).item()
-        end_prob = torch.max(torch.softmax(outputs.end_logits, dim=-1)).item()
+        end_prob   = torch.max(torch.softmax(outputs.end_logits,   dim=-1)).item()
         confidence_score = (start_prob + end_prob) / 2
 
-        # 6. 解码 Token
         all_tokens = self.tokenizer.convert_ids_to_tokens(inputs.input_ids[0])
-        # 注意：索引要加 1 因为切片是不包含结尾的
-        answer = self.tokenizer.convert_tokens_to_string(all_tokens[answer_start : answer_end + 1])
-        
-        # 移除特殊占位符
+        answer = self.tokenizer.convert_tokens_to_string(
+            all_tokens[answer_start : answer_end + 1]
+        )
         answer = answer.replace("[CLS]", "").replace("[SEP]", "").strip()
 
         return {
@@ -279,8 +302,6 @@ class PubMedBERTQA:
             "score": confidence_score,
         }
 
-    def batch_predict(
-        self, questions: list[str], contexts: list[str]
-    ) -> list[dict[str, Any]]:
+    def batch_predict(self, questions: list, contexts: list) -> list:
         """Run predict() over paired lists of questions and contexts."""
         return [self.predict(q, c) for q, c in zip(questions, contexts)]

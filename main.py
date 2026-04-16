@@ -1,24 +1,6 @@
-"""
-Gradio demo for the MedQA system.
-
-Launches a web UI where users can:
-  - Type a medical question
-  - Choose a model backend (Baseline / BERT / RAG)
-  - View the answer and the retrieved source chunks
-
-Run with:
-    uv run python main.py
-Then open http://localhost:7860 in your browser.
-"""
-
-import os
+"""Gradio demo for the MedQA system."""
 
 import gradio as gr
-from dotenv import load_dotenv
-
-load_dotenv()
-
-# ── Lazy model cache (loaded once per session) ────────────────────────────────
 
 _models: dict = {}
 
@@ -49,11 +31,12 @@ def _get_bert():
 
 def _get_rag():
     if "rag" not in _models:
-        from medqa.models.llm_qa import APILLM
+        from medqa.models.llm_qa import LocalLLM
         from medqa.retrieval.rag_pipeline import RAGPipeline
         from medqa.data.loader import load_pubmedqa, load_pubmedqa_unlabeled
 
-        llm = APILLM()
+        llm = LocalLLM()
+        llm.load()
         pipeline = RAGPipeline(llm=llm)
         if pipeline.vs.count() == 0:
             records = load_pubmedqa() + load_pubmedqa_unlabeled()
@@ -62,15 +45,8 @@ def _get_rag():
     return _models["rag"]
 
 
-# ── Core answer function ──────────────────────────────────────────────────────
-
 def answer_question(question: str, mode: str) -> tuple[str, str]:
-    """
-    Called by Gradio on each submission.
-
-    Returns:
-        (answer_text, sources_text)
-    """
+    """Called by Gradio on each submission. Returns (answer, sources)."""
     if not question.strip():
         return "Please enter a question.", ""
 
@@ -112,16 +88,12 @@ def answer_question(question: str, mode: str) -> tuple[str, str]:
     return "Unknown mode.", ""
 
 
-# ── Gradio UI ─────────────────────────────────────────────────────────────────
-
 def build_ui() -> gr.Blocks:
-    with gr.Blocks(title="MedQA — Medical Literature QA", theme=gr.themes.Soft()) as demo:
+    with gr.Blocks(title="MedQA - Medical Literature QA", theme=gr.themes.Soft()) as demo:
         gr.Markdown(
             """
-            # 🏥 MedQA — Medical Literature Question Answering
-            **COMP6713 Group Project** · University of New South Wales
-
-            Ask any medical question. The system retrieves relevant PubMed abstracts
+            # MedQA - Medical Literature Question Answering
+            Ask a medical question. The system retrieves relevant PubMed abstracts
             and generates an evidence-based answer.
             """
         )
@@ -148,7 +120,6 @@ def build_ui() -> gr.Blocks:
                 answer_box = gr.Textbox(label="Answer", lines=6, interactive=False)
                 sources_box = gr.Textbox(label="Retrieved Sources", lines=10, interactive=False)
 
-        # Example questions
         gr.Examples(
             examples=[
                 ["What are the symptoms of Type 2 diabetes?", "RAG (Retrieval + Qwen/DeepSeek)"],

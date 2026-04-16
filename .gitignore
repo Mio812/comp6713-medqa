@@ -9,15 +9,16 @@ uv.lock
 
 # Data & Models (too large for git)
 data/raw/
+data/processed/
 chroma_db/
 checkpoints/
+checkpoints*/
 
-# Environment
-.env
+# Evaluation outputs
+results/
 
 # Jupyter
 .ipynb_checkpoints/
 notebooks/.ipynb_checkpoints/
 
-# OS
-.DS_Store
+#

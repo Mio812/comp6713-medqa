@@ -1,0 +1,122 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "0. Install scispaCy model (one-off, ~5 min)",
+      "type": "shell",
+      "command": "uv",
+      "args": ["run", "python", "scripts/setup_scispacy.py"],
+      "problemMatcher": [],
+      "group": { "kind": "build", "isDefault": true },
+      "presentation": { "reveal": "always", "panel": "shared", "clear": true }
+    },
+    {
+      "label": "1. Build RAG index (~30 min GPU)",
+      "type": "shell",
+      "command": "uv",
+      "args": ["run", "python", "scripts/build_rag_index.py"],
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "shared", "clear": true }
+    },
+    {
+      "label": "2a. BERT HP search (Optuna, ~1-2 h) [optional, before 2b]",
+      "type": "shell",
+      "command": "uv",
+      "args": ["run", "python", "scripts/hp_search.py", "--trials", "15", "--train", "1000", "--resume"],
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "shared", "clear": true }
+    },
+    {
+      "label": "2b. Fine-tune PubMedBERT (~30 min GPU)",
+      "type": "shell",
+      "command": "uv",
+      "args": ["run", "python", "scripts/finetune_bert.py"],
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "shared", "clear": true }
+    },
+    {
+      "label": "2b'. Fine-tune PubMedBERT with HP-search best params (~30 min GPU)",
+      "type": "shell",
+      "command": "uv",
+      "args": ["run", "python", "scripts/finetune_bert.py", "--use-best-params"],
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "shared", "clear": true }
+    },
+    {
+      "label": "3a. RAG ablation sweep (~1 h)",
+      "type": "shell",
+      "command": "uv",
+      "args": ["run", "python", "scripts/ablation.py", "--n", "60", "--resume"],
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "shared", "clear": true }
+    },
+    {
+      "label": "3b. Eval with default BERT (~1-2 h)",
+      "type": "shell",
+      "command": "uv",
+      "args": ["run", "python", "run_eval.py", "--n", "200", "--tag", "default", "--bert-checkpoint", "checkpoints/bert_qa", "--output-dir", "reports", "--resume"],
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "shared", "clear": true }
+    },
+    {
+      "label": "3b'. Eval with HP-optimized BERT (~1-2 h)",
+      "type": "shell",
+      "command": "uv",
+      "args": ["run", "python", "run_eval.py", "--n", "200", "--tag", "hp", "--bert-checkpoint", "checkpoints/bert_qa_hp", "--output-dir", "reports", "--resume"],
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "shared", "clear": true }
+    },
+    {
+      "label": "4. Launch Gradio demo",
+      "type": "shell",
+      "command": "uv",
+      "args": ["run", "python", "main.py"],
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "python",
+        "pattern": [
+          { "regexp": "^(.*)$", "file": 1, "line": 1, "message": 1 }
+        ],
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": ".*Running on local.*",
+          "endsPattern": ".*http://.*:7860.*"
+        }
+      },
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+    },
+    {
+      "label": "Pipeline: Prepare only (0 -> 1 -> 2b)",
+      "dependsOrder": "sequence",
+      "dependsOn": [
+        "0. Install scispaCy model (one-off, ~5 min)",
+        "1. Build RAG index (~30 min GPU)",
+        "2b. Fine-tune PubMedBERT (~30 min GPU)"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "Pipeline: Full run with default params (0 -> ... -> 3b)",
+      "dependsOrder": "sequence",
+      "dependsOn": [
+        "0. Install scispaCy model (one-off, ~5 min)",
+        "1. Build RAG index (~30 min GPU)",
+        "2b. Fine-tune PubMedBERT (~30 min GPU)",
+        "3a. RAG ablation sweep (~1 h)",
+        "3b. Eval with default BERT (~1-2 h)"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "Pipeline: HP search + fine-tune (best params) + eval (2a -> 2b' -> 3b')",
+      "dependsOrder": "sequence",
+      "dependsOn": [
+        "0. Install scispaCy model (one-off, ~5 min)",
+        "2a. BERT HP search (Optuna, ~1-2 h) [optional, before 2b]",
+        "2b'. Fine-tune PubMedBERT with HP-search best params (~30 min GPU)",
+        "3b'. Eval with HP-optimized BERT (~1-2 h)"
+      ],
+      "problemMatcher": []
+    }
+  ]
+}

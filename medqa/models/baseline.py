@@ -1,35 +1,25 @@
-"""
-Baseline model: TF-IDF retrieval + most-relevant-sentence extraction.
-
-This is intentionally simple — it serves as the lower-bound comparison for
-the fine-tuned BERT and RAG models.
-
-Pipeline:
-  1. Build a TF-IDF matrix over all training contexts.
-  2. Given a query, find the most similar context by cosine similarity.
-  3. Extract the single sentence from that context with the highest
-     cosine similarity to the query as the predicted answer.
-"""
+"""TF-IDF retrieval + most-relevant-sentence extraction (non-learned baseline)."""
 
 import pickle
-from pathlib import Path
 from typing import Any
 
 import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
+from medqa._log import get_logger
 from medqa.config import PROCESSED_DIR
 from medqa.data.preprocessor import clean_text
 
+log = get_logger("baseline")
+
 _VECTORIZER_PATH = PROCESSED_DIR / "tfidf_vectorizer.pkl"
-_MATRIX_PATH = PROCESSED_DIR / "tfidf_matrix.pkl"
-_CORPUS_PATH = PROCESSED_DIR / "tfidf_corpus.pkl"
+_MATRIX_PATH     = PROCESSED_DIR / "tfidf_matrix.pkl"
+_CORPUS_PATH     = PROCESSED_DIR / "tfidf_corpus.pkl"
 
 
 class TFIDFBaseline:
-    """
-    TF-IDF + cosine similarity baseline for medical QA.
+    """TF-IDF + cosine similarity baseline for medical QA.
 
     Usage:
         model = TFIDFBaseline()
@@ -40,18 +30,15 @@ class TFIDFBaseline:
     def __init__(self, max_features: int = 50_000, ngram_range: tuple = (1, 2)):
         self.vectorizer = TfidfVectorizer(
             max_features=max_features,
-            ngram_range=ngram_range,   # unigrams + bigrams
-            sublinear_tf=True,         # log-scale TF dampens frequent terms
+            ngram_range=ngram_range,
+            sublinear_tf=True,
             stop_words="english",
         )
         self.tfidf_matrix = None
-        self.corpus: list[dict[str, Any]] = []  # stores original records
+        self.corpus: list = []
 
-    # ── Training ──────────────────────────────────────────────────────────────
-
-    def fit(self, records: list[dict[str, Any]]) -> None:
-        """
-        Build TF-IDF index from training records.
+    def fit(self, records: list) -> None:
+        """Build TF-IDF index from training records.
 
         Args:
             records: list of dicts with at least 'context' and 'answer' keys.
@@ -59,9 +46,8 @@ class TFIDFBaseline:
         self.corpus = records
         texts = [clean_text(r["context"]) for r in records]
         self.tfidf_matrix = self.vectorizer.fit_transform(texts)
-        print(f"[Baseline] TF-IDF matrix: {self.tfidf_matrix.shape}")
+        log.info("TF-IDF matrix: %s", self.tfidf_matrix.shape)
 
-        # Persist to disk so we do not need to rebuild each run
         PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
         with open(_VECTORIZER_PATH, "wb") as f:
             pickle.dump(self.vectorizer, f)
@@ -69,7 +55,7 @@ class TFIDFBaseline:
             pickle.dump(self.tfidf_matrix, f)
         with open(_CORPUS_PATH, "wb") as f:
             pickle.dump(self.corpus, f)
-        print("[Baseline] Index saved to disk.")
+        log.info("Index saved to disk.")
 
     def load(self) -> bool:
         """Load a previously saved index. Returns True if successful."""
@@ -81,16 +67,11 @@ class TFIDFBaseline:
             self.tfidf_matrix = pickle.load(f)
         with open(_CORPUS_PATH, "rb") as f:
             self.corpus = pickle.load(f)
-        print("[Baseline] Index loaded from disk.")
+        log.info("Index loaded from disk.")
         return True
 
-    # ── Inference ─────────────────────────────────────────────────────────────
-
-    def retrieve(self, query: str, top_k: int = 5) -> list[dict[str, Any]]:
-        """
-        Return the *top_k* most similar records to *query*.
-        Each returned dict includes an extra 'score' key.
-        """
+    def retrieve(self, query: str, top_k: int = 5) -> list:
+        """Return the top_k most similar records to query, each with a 'score' key."""
         query_vec = self.vectorizer.transform([clean_text(query)])
         scores = cosine_similarity(query_vec, self.tfidf_matrix).flatten()
         top_indices = np.argsort(scores)[::-1][:top_k]
@@ -101,9 +82,8 @@ class TFIDFBaseline:
             results.append(record)
         return results
 
-    def predict(self, query: str) -> dict[str, Any]:
-        """
-        Retrieve the best matching context and extract the answer sentence.
+    def predict(self, query: str) -> dict:
+        """Retrieve the best matching context and extract the answer sentence.
 
         Returns a dict with:
             predicted_answer : the extracted sentence
@@ -116,8 +96,6 @@ class TFIDFBaseline:
 
         best = top_results[0]
         context = best["context"]
-
-        # Extract the single sentence most similar to the query
         answer_sentence = _extract_best_sentence(query, context, self.vectorizer)
 
         return {
@@ -127,31 +105,21 @@ class TFIDFBaseline:
             "gold_answer":      best.get("answer", ""),
         }
 
-    def batch_predict(self, queries: list[str]) -> list[dict[str, Any]]:
+    def batch_predict(self, queries: list) -> list:
         """Run predict() over a list of queries."""
         return [self.predict(q) for q in queries]
 
 
-# ── Sentence extraction helper ────────────────────────────────────────────────
-
 def _extract_best_sentence(query: str, context: str, vectorizer: TfidfVectorizer) -> str:
-    """
-    Split *context* into sentences and return the one most similar to *query*.
-    Falls back to the full context if splitting fails.
-    """
+    """Split context into sentences and return the one most similar to query."""
     import nltk
-    
-    # 检查并下载 punkt
-    try:
-        nltk.data.find("tokenizers/punkt")
-    except LookupError:
-        nltk.download("punkt", quiet=True)
-        
-    # [新增] 检查并下载 punkt_tab (适配新版 NLTK)
-    try:
-        nltk.data.find("tokenizers/punkt_tab")
-    except LookupError:
-        nltk.download("punkt_tab", quiet=True)
+
+    # NLTK >= 3.8.2 also requires punkt_tab.
+    for resource in ("tokenizers/punkt", "tokenizers/punkt_tab"):
+        try:
+            nltk.data.find(resource)
+        except LookupError:
+            nltk.download(resource.split("/")[-1], quiet=True)
 
     from nltk.tokenize import sent_tokenize
     sentences = sent_tokenize(context)

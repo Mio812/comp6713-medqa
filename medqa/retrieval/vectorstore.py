@@ -1,11 +1,6 @@
-"""
-ChromaDB vector store for dense retrieval.
+"""ChromaDB vector store backed by BGE-M3 embeddings for dense retrieval."""
 
-Embeds medical document chunks using BAAI/bge-m3 and stores them in a
-persistent ChromaDB collection. Supports both building the index from
-scratch and loading an existing one.
-"""
-
+import uuid
 from typing import Any
 
 import chromadb
@@ -16,8 +11,11 @@ try:
 except ImportError:
     from langchain.text_splitter import RecursiveCharacterTextSplitter
 
+from medqa._log import get_logger
 from medqa.config import CHROMA_DIR, EMBEDDING_MODEL, RAG
 from medqa.data.preprocessor import clean_text
+
+log = get_logger("vectorstore")
 
 
 class VectorStore:
@@ -39,35 +37,22 @@ class VectorStore:
         self.collection_name = collection_name
         self.persist_dir = persist_dir
 
-        # BGE-M3: multilingual, strong on biomedical text
-        print(f"[VectorStore] Loading embedding model: {embedding_model}")
+        log.info("Loading embedding model: %s", embedding_model)
         self.embedder = SentenceTransformer(embedding_model)
 
-        # Persistent ChromaDB client
         self.client = chromadb.PersistentClient(
             path=persist_dir,
             settings=Settings(anonymized_telemetry=False),
         )
         self.collection = self.client.get_or_create_collection(
             name=collection_name,
-            metadata={"hnsw:space": "cosine"},   # cosine similarity
+            metadata={"hnsw:space": "cosine"},
         )
-        print(f"[VectorStore] Collection '{collection_name}' ready "
-              f"({self.collection.count()} docs).")
-
-    # ── Index building ─────────────────────────────────────────────────────────
+        self._cached_count: int | None = None
+        log.info("Collection '%s' ready (%d docs).", collection_name, self.count())
 
     def build(self, records: list[dict[str, Any]], batch_size: int = 64) -> None:
-        """
-        Chunk and embed *records*, then upsert into ChromaDB.
-
-        Each record's context is split into overlapping chunks so long
-        abstracts are indexed at a finer granularity.
-
-        Args:
-            records    : list of dicts with at least 'context' and 'question' keys
-            batch_size : number of chunks to embed at once (tune for VRAM)
-        """
+        """Chunk and embed records, then upsert into ChromaDB."""
         splitter = RecursiveCharacterTextSplitter(
             chunk_size=RAG["chunk_size"],
             chunk_overlap=RAG["chunk_overlap"],
@@ -75,30 +60,29 @@ class VectorStore:
         )
 
         documents, metadatas, ids = [], [], []
-        chunk_id = self.collection.count()   # continue numbering from existing docs
 
         for record in records:
             context = clean_text(record.get("context", ""))
             if not context:
                 continue
 
+            doc_id = record.get("id", "")
             chunks = splitter.split_text(context)
-            for chunk in chunks:
+            for chunk_idx, chunk in enumerate(chunks):
                 documents.append(chunk)
                 metadatas.append({
-                    "question": record.get("question", "")[:200],
-                    "answer":   record.get("answer",   "")[:200],
-                    "source":   record.get("source",   "unknown"),
+                    "source":    record.get("source", "unknown"),
+                    "doc_id":    str(doc_id) if doc_id else "",
+                    "chunk_idx": chunk_idx,
                 })
-                ids.append(f"doc_{chunk_id}")
-                chunk_id += 1
+                # UUIDs keep ids unique across re-runs of build().
+                ids.append(uuid.uuid4().hex)
 
         if not documents:
-            print("[VectorStore] No documents to index.")
+            log.warning("No documents to index.")
             return
 
-        # Embed and upsert in batches
-        print(f"[VectorStore] Embedding {len(documents)} chunks ...")
+        log.info("Embedding %d chunks ...", len(documents))
         for i in range(0, len(documents), batch_size):
             batch_docs  = documents[i : i + batch_size]
             batch_meta  = metadatas[i : i + batch_size]
@@ -112,26 +96,24 @@ class VectorStore:
                 metadatas=batch_meta,
                 ids=batch_ids,
             )
-            print(f"  Upserted {min(i + batch_size, len(documents))}/{len(documents)}")
+            log.info("  Upserted %d/%d", min(i + batch_size, len(documents)), len(documents))
 
-        print(f"[VectorStore] Index now contains {self.collection.count()} chunks.")
-
-    # ── Retrieval ──────────────────────────────────────────────────────────────
+        self._cached_count = None
+        log.info("Index now contains %d chunks.", self.count())
 
     def retrieve(self, query: str, k: int = RAG["retrieve_top_k"]) -> list[dict[str, Any]]:
-        """
-        Embed *query* and return the *k* most similar chunks.
-
-        Returns a list of dicts with keys:
-            text, score, question, answer, source
-        """
+        """Embed query and return the k most similar chunks."""
         query_embedding = self.embedder.encode(
             [clean_text(query)], normalize_embeddings=True
         ).tolist()
 
+        total = self.count()
+        if total == 0:
+            return []
+
         results = self.collection.query(
             query_embeddings=query_embedding,
-            n_results=min(k, self.collection.count()),
+            n_results=min(k, total),
             include=["documents", "metadatas", "distances"],
         )
 
@@ -142,17 +124,18 @@ class VectorStore:
             results["distances"][0],
         ):
             hits.append({
-                "text":     doc,
-                "score":    1 - dist,   # cosine distance → similarity
-                "question": meta.get("question", ""),
-                "answer":   meta.get("answer", ""),
-                "source":   meta.get("source", ""),
+                "text":   doc,
+                "score":  1 - dist,
+                "source": meta.get("source", ""),
+                "doc_id": meta.get("doc_id", ""),
             })
         return hits
 
     def count(self) -> int:
-        """Return the number of indexed chunks."""
-        return self.collection.count()
+        """Return the number of indexed chunks (memoised)."""
+        if self._cached_count is None:
+            self._cached_count = self.collection.count()
+        return self._cached_count
 
     def reset(self) -> None:
         """Delete and recreate the collection (clears the index)."""
@@ -161,4 +144,5 @@ class VectorStore:
             name=self.collection_name,
             metadata={"hnsw:space": "cosine"},
         )
-        print(f"[VectorStore] Collection '{self.collection_name}' reset.")
+        self._cached_count = 0
+        log.info("Collection '%s' reset.", self.collection_name)

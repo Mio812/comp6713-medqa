@@ -1,19 +1,4 @@
-"""
-Command-line interface for the MedQA system.
-
-Supports two modes:
-  1. Single question  : pass --question "..."
-  2. Batch from file  : pass --input questions.txt (one question per line)
-
-Backend is selected via --mode:
-  baseline  : TF-IDF retrieval
-  bert      : fine-tuned PubMedBERT (requires trained checkpoint)
-  rag       : full RAG pipeline with Qwen/DeepSeek LLM
-
-Usage examples:
-  uv run medqa --question "What is the treatment for Type 2 diabetes?" --mode rag
-  uv run medqa --input questions.txt --mode baseline --output answers.json
-"""
+"""Command-line interface for the MedQA system."""
 
 import argparse
 import json
@@ -22,9 +7,11 @@ from pathlib import Path
 
 
 def build_parser() -> argparse.ArgumentParser:
+    from medqa.models.registry import available_backends
+
     parser = argparse.ArgumentParser(
         prog="medqa",
-        description="Medical Literature QA System — COMP6713",
+        description="Medical Literature QA System",
     )
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument(
@@ -39,7 +26,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--mode", "-m",
-        choices=["baseline", "bert", "rag"],
+        choices=available_backends(),
         default="rag",
         help="Which model backend to use (default: rag).",
     )
@@ -55,97 +42,55 @@ def build_parser() -> argparse.ArgumentParser:
         default=3,
         help="Number of retrieved chunks to show (RAG mode only, default: 3).",
     )
+    parser.add_argument(
+        "--answer-type",
+        choices=["auto", "yesno", "factoid", "free"],
+        default="auto",
+        help="Force the LLM prompt template (rag / llm backends).",
+    )
+    parser.add_argument(
+        "--show-context",
+        action="store_true",
+        help="For rag mode: print the top reranked chunks used for each question.",
+    )
     return parser
 
 
-def _load_model(mode: str):
-    """Lazy-import and initialise the chosen backend."""
-    if mode == "baseline":
-        from medqa.models.baseline import TFIDFBaseline
-        from medqa.data.loader import load_all
-        model = TFIDFBaseline()
-        if not model.load():
-            print("[CLI] No saved index found — building from dataset ...")
-            from medqa.data.preprocessor import split_dataset
-            records, _ = split_dataset(load_all())
-            model.fit(records)
-        return model
-
-    elif mode == "bert":
-        from medqa.models.bert_qa import PubMedBERTQA
-        model = PubMedBERTQA()
-        if not model.load():
-            print("[CLI] No fine-tuned checkpoint found. Run fine-tuning first.")
-            sys.exit(1)
-        return model
-
-    elif mode == "rag":
-        # 1. Replace APILLM with LocalLLM
-        from medqa.models.llm_qa import LocalLLM 
-        from medqa.retrieval.rag_pipeline import RAGPipeline
-        
-        # 2. Instantiate the local model
-        llm = LocalLLM() 
-        
-        # 3. CRITICAL: Call load() to load the 4-bit quantized model into VRAM
-        llm.load() 
-        
-        pipeline = RAGPipeline(llm=llm)
-        if pipeline.vs.count() == 0:
-            print("[CLI] Vector store empty — indexing dataset ...")
-            from medqa.data.loader import load_pubmedqa, load_pubmedqa_unlabeled
-            records = load_pubmedqa() + load_pubmedqa_unlabeled()
-            pipeline.build_index(records)
-        return pipeline
-
-
-def _predict(model, question: str, mode: str) -> dict:
-    """Dispatch prediction to the correct backend."""
-    if mode == "baseline":
-        return model.predict(question)
-    elif mode == "bert":
-        # BERT needs a context; use retrieval result from baseline as fallback
-        from medqa.models.baseline import TFIDFBaseline
-        baseline = TFIDFBaseline()
-        baseline.load()
-        top = baseline.retrieve(question, top_k=1)
-        context = top[0]["context"] if top else ""
-        return model.predict(question, context)
-    elif mode == "rag":
-        return model.query(question)
+def _load_backend(mode: str):
+    """Load a backend through the registry."""
+    from medqa.models.registry import get_backend
+    try:
+        return get_backend(mode)
+    except RuntimeError as e:
+        print(f"[CLI] {e}")
+        sys.exit(1)
 
 
 def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
 
-    # Load .env for API keys
-    try:
-        from dotenv import load_dotenv
-        load_dotenv()
-    except ImportError:
-        pass
-
     print(f"[CLI] Loading backend: {args.mode}")
-    model = _load_model(args.mode)
+    model, predict_fn = _load_backend(args.mode)
 
-    # Collect questions
     if args.question:
         questions = [args.question]
     else:
         questions = args.input.read_text().strip().splitlines()
         questions = [q.strip() for q in questions if q.strip()]
 
-    # Run predictions
     results = []
     for q in questions:
         print(f"\nQ: {q}")
-        result = _predict(model, q, args.mode)
+        result = predict_fn(model, q, answer_type=args.answer_type)
         answer = result.get("predicted_answer", "")
         print(f"A: {answer}")
+        if args.show_context and "reranked_chunks" in result:
+            for i, chunk in enumerate(result["reranked_chunks"], 1):
+                text = chunk.get("text", "") if isinstance(chunk, dict) else str(chunk)
+                print(f"  [chunk {i}] {text[:200]}...")
         results.append({"question": q, **result})
 
-    # Save output
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         with open(args.output, "w") as f:

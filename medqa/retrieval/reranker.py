@@ -1,19 +1,12 @@
-"""
-Cross-encoder reranker using BAAI/bge-reranker-v2-m3.
-
-Uses sentence-transformers CrossEncoder instead of FlagEmbedding for
-better compatibility with newer versions of transformers.
-
-After dense retrieval returns ~10 candidate chunks, the reranker scores
-each (query, chunk) pair with a cross-encoder and keeps the top-k.
-Cross-encoders are slower but significantly more accurate than bi-encoders
-for final ranking.
-"""
+"""BGE cross-encoder reranker applied to the top-k bi-encoder candidates."""
 
 from typing import Any
 
+from medqa._log import get_logger
 from medqa.config import RERANKER_MODEL, RAG
 from medqa.data.preprocessor import clean_text
+
+log = get_logger("reranker")
 
 
 class Reranker:
@@ -33,9 +26,9 @@ class Reranker:
     def load(self) -> None:
         """Load the cross-encoder model (downloaded automatically on first run)."""
         from sentence_transformers import CrossEncoder
-        print(f"[Reranker] Loading {self.model_name} ...")
+        log.info("Loading %s ...", self.model_name)
         self.model = CrossEncoder(self.model_name, max_length=512)
-        print("[Reranker] Ready.")
+        log.info("Reranker ready.")
 
     def rerank(
         self,
@@ -43,18 +36,7 @@ class Reranker:
         candidates: list[dict[str, Any]],
         top_k: int = RAG["rerank_top_k"],
     ) -> list[dict[str, Any]]:
-        """
-        Score each candidate against *query* and return the top *top_k*.
-
-        Args:
-            query      : the user question (already cleaned)
-            candidates : list of dicts from VectorStore.retrieve(), each
-                         must have a 'text' key
-            top_k      : how many results to return after reranking
-
-        Returns:
-            Sorted list (best first) with an added 'rerank_score' key.
-        """
+        """Score candidates against query; return top_k with a 'rerank_score' key."""
         if self.model is None:
             raise RuntimeError("Call load() before rerank().")
         if not candidates:
@@ -64,7 +46,6 @@ class Reranker:
         pairs = [[q, clean_text(c["text"])] for c in candidates]
         scores = self.model.predict(pairs)
 
-        # Attach scores and sort descending
         for cand, score in zip(candidates, scores):
             cand["rerank_score"] = float(score)
 

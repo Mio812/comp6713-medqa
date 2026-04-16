@@ -1,0 +1,53 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run eval (200 samples)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/run_eval.py",
+      "args": ["--n", "200"],
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "Run eval (no RAG, CPU-friendly)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/run_eval.py",
+      "args": ["--n", "100", "--skip-rag"],
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "Gradio demo (main.py)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/main.py",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "CLI — single question (RAG)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "medqa.cli",
+      "args": ["--question", "What is the first-line treatment for hypertension?", "--mode", "rag", "--show-context"],
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "Current file",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${file}",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "cwd": "${workspaceFolder}"
+    }
+  ]
+}
