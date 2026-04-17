@@ -115,4 +115,13 @@ def _assemble_context(chunks: list, max_chars: int = 2000) -> str:
             continue
         header = f"[Source {i}]"
         entry = f"{header} {text}"
-        
+        if total + len(entry) > max_chars:
+            remaining = max_chars - total
+            if remaining > len(header) + 20:
+                entry = entry[:remaining] + "..."
+                parts.append(entry)
+            break
+        parts.append(entry)
+        total += len(entry) + 1
+
+    return "\n\n".join(parts)

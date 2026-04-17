@@ -21,4 +21,11 @@ results/
 .ipynb_checkpoints/
 notebooks/.ipynb_checkpoints/
 
-#
+# OS
+.DS_Store
+
+# Word temp files
+~$*
+
+# Course spec documents (not our work)
+comp6713-project-*.docx

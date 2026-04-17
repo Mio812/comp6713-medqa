@@ -690,4 +690,59 @@ Metric notes:
 
 - EM / F1: computed after SQuAD-style normalisation (lowercase, strip articles, strip `Answer:` / `Final answer:` prefixes).
 - BERTScore F1: semantic similarity under `roberta-base` embeddings. We use `roberta-base` instead of DeBERTa because DeBERTa triggers an int32 overflow on positional embeddings under Python 3.11.
-- Yes/No Acc: PubMedQA only. `yesno_accuracy()` uses `extract_yesno()` so fluent outputs like "Yes, because..." are still counted correctly; answers that
+- Yes/No Acc: PubMedQA only. `yesno_accuracy()` uses `extract_yesno()` so fluent outputs like "Yes, because..." are still counted correctly; answers that cannot be mapped to yes/no/maybe are reported as uncategorised and count as wrong.
+- LLM-as-judge (optional, `--llm-judge`): a second LLM pass judging whether the candidate is semantically equivalent to the gold. Useful because EM / F1 under-score paraphrased-but-correct answers.
+
+---
+
+## 10. Engineering Decisions
+
+### Unified data schema
+
+All three loaders return the same `{question, context, answer, answer_type, source}` dictionary, so the evaluation loop, CLI, and Gradio demo are backend-agnostic. Adding a fourth model requires only implementing `predict(question, context) -> dict`.
+
+### No end-to-end RAG fine-tuning
+
+End-to-end RAG training requires differentiable retrieval and large batches of `(question, supporting documents, answer)` triples. Our combined dataset of ~21k samples is insufficient for stable joint training. The current design (fixed retriever, fixed LLM) remains reproducible and interpretable.
+
+### ChromaDB over FAISS
+
+ChromaDB persists the index to disk automatically. FAISS requires manual serialisation and re-loading logic. At our scale (~62k chunks), ChromaDB's HNSW index provides millisecond retrieval with no perceptible latency difference from FAISS, while reducing boilerplate.
+
+### 4-bit quantisation (NF4)
+
+Full float16 inference of Qwen2.5-14B requires about 28 GB VRAM. NF4 quantisation with double quantisation (BitsAndBytes) reduces this to about 9 GB with an empirical accuracy drop below 2%, making the model runnable on a single consumer GPU.
+
+### Greedy decoding (`do_sample=False`)
+
+Greedy decoding is deterministic: the same input always produces the same output. This is required for reproducible evaluation. Sampling-based decoding (nucleus sampling, beam search) would introduce variance across runs and make metric comparisons unreliable.
+
+### Answer-type-conditioned prompting
+
+Without it the LLM writes full sentences and scores EM near 0.02 on PubMedQA (gold label is the single token `yes`). Fixing the prompt keeps EM directly comparable across all three backends. The three templates (yesno / factoid / free) map onto the three gold-answer formats in the datasets.
+
+### Two-stage retrieval (bi-encoder + cross-encoder)
+
+- Bi-encoder (BGE-M3): encodes query and document independently. Retrieval is a vector dot product, scalable to millions of documents in milliseconds.
+- Cross-encoder (BGE-reranker): encodes the `(query, document)` pair jointly, allowing attention to flow between both inputs. More accurate but slower (O(n) forward passes).
+
+Using both stages in sequence gives near-cross-encoder accuracy at near-bi-encoder speed for the top-10 candidates.
+
+### scispaCy + UMLS over general NLP tools
+
+General-purpose NER tools (spaCy `en_core_web_lg`) are not trained on biomedical text and frequently miss or misclassify medical entities. `en_core_sci_lg` is trained on biomedical literature and directly supports UMLS linking, providing canonical concept IDs without any external API or registration.
+
+---
+
+## 11. References
+
+- Devlin et al. (2019). BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding.
+- Gu et al. (2021). Domain-specific language model pretraining for biomedical NLP. (PubMedBERT)
+- Jin et al. (2019). PubMedQA: A Dataset for Biomedical Research Question Answering. EMNLP 2019.
+- Lewis et al. (2020). Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks. NeurIPS 2020.
+- Nogueira & Cho (2019). Passage Re-ranking with BERT.
+- Rajpurkar et al. (2016). SQuAD: 100,000+ Questions for Machine Comprehension of Text. EMNLP 2016.
+- Rajpurkar et al. (2018). Know What You Don't Know: Unanswerable Questions for SQuAD. ACL 2018.
+- Tsatsaronis et al. (2015). An overview of the BioASQ large-scale biomedical semantic indexing and question answering competition. BMC Bioinformatics.
+- Zhang et al. (2020). BERTScore: Evaluating Text Generation with BERT. ICLR 2020.
+- Dettmers et al. (2023). QLoRA: Efficient Finetuning of Quantized LLMs. (NF4 quantisation)
