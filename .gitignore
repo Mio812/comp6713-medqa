@@ -23,9 +23,26 @@ notebooks/.ipynb_checkpoints/
 
 # OS
 .DS_Store
+Thumbs.db
 
-# Word temp files
+# Editor / office temp files
+*.tmp
+*.bak
+*.local-bak
+.~lock.*
 ~$*
+
+# Screenshot / evidence preview images (local only)
+screenshot/
+screenshot.zip
+_id_*.png
+_sheet_*.jpg
+_check_*.png
+_contact_sheet.jpg
+_id_all.jpg
+ev_*.jpg
+evidence_preview-*.jpg
+slidev2-*.jpg
 
 # Course spec documents (not our work)
 comp6713-project-*.docx

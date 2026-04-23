@@ -114,7 +114,7 @@ _SENT_SPLIT_RE = None
 
 
 def _split_sentences(text: str) -> list:
-    """Lightweight sentence splitter — no NLTK / network dependency.
+    """Lightweight sentence splitter, no NLTK / network dependency.
 
     Good enough for TF-IDF baseline: splits on '.', '!', '?' followed by
     whitespace, with a few common-abbreviation guards.
