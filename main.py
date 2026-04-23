@@ -88,47 +88,69 @@ def answer_question(question: str, mode: str) -> tuple[str, str]:
     return "Unknown mode.", ""
 
 
+CSS = """
+.gradio-container, .gradio-container * {
+    font-family: "Times New Roman", Times, serif !important;
+}
+.gradio-container {
+    background: #ffffff !important;
+    max-width: 880px !important;
+    margin: 0 auto !important;
+}
+/* Headings / labels */
+.gradio-container h1, .gradio-container h2, .gradio-container h3,
+.gradio-container label, .gradio-container .label-wrap {
+    color: #1e3a8a !important;
+}
+/* Text inputs and dropdowns */
+.gradio-container input, .gradio-container textarea, .gradio-container select {
+    background: #ffffff !important;
+    color: #1e3a8a !important;
+    border: 1px solid #93c5fd !important;
+}
+.gradio-container input:focus, .gradio-container textarea:focus {
+    border-color: #2563eb !important;
+    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15) !important;
+}
+/* Primary button */
+.gradio-container button.primary, .gradio-container .primary button {
+    background: #2563eb !important;
+    color: #ffffff !important;
+    border: none !important;
+}
+.gradio-container button.primary:hover, .gradio-container .primary button:hover {
+    background: #1d4ed8 !important;
+}
+/* Block containers */
+.gradio-container .block, .gradio-container .form {
+    background: #ffffff !important;
+    border-color: #dbeafe !important;
+}
+"""
+
+
 def build_ui() -> gr.Blocks:
-    with gr.Blocks(title="MedQA - Medical Literature QA", theme=gr.themes.Soft()) as demo:
-        gr.Markdown(
-            """
-            # MedQA - Medical Literature Question Answering
-            Ask a medical question. The system retrieves relevant PubMed abstracts
-            and generates an evidence-based answer.
-            """
+    with gr.Blocks(title="MedQA") as demo:
+        gr.Markdown("## MedQA - Medical Literature QA")
+
+        question_box = gr.Textbox(
+            label="Question",
+            placeholder="e.g. What is the first-line treatment for hypertension?",
+            lines=2,
         )
-
-        with gr.Row():
-            with gr.Column(scale=3):
-                question_box = gr.Textbox(
-                    label="Your Question",
-                    placeholder="e.g. What is the first-line treatment for hypertension?",
-                    lines=3,
-                )
-                mode_selector = gr.Radio(
-                    choices=[
-                        "Baseline (TF-IDF)",
-                        "BERT (Fine-tuned PubMedBERT)",
-                        "RAG (Retrieval + Qwen/DeepSeek)",
-                    ],
-                    value="RAG (Retrieval + Qwen/DeepSeek)",
-                    label="Model Backend",
-                )
-                submit_btn = gr.Button("Ask", variant="primary")
-
-            with gr.Column(scale=4):
-                answer_box = gr.Textbox(label="Answer", lines=6, interactive=False)
-                sources_box = gr.Textbox(label="Retrieved Sources", lines=10, interactive=False)
-
-        gr.Examples(
-            examples=[
-                ["What are the symptoms of Type 2 diabetes?", "RAG (Retrieval + Qwen/DeepSeek)"],
-                ["Is metformin effective for treating insulin resistance?", "Baseline (TF-IDF)"],
-                ["What causes myocardial infarction?", "BERT (Fine-tuned PubMedBERT)"],
-                ["What is the relationship between obesity and hypertension?", "RAG (Retrieval + Qwen/DeepSeek)"],
+        mode_selector = gr.Dropdown(
+            choices=[
+                "RAG (Retrieval + Qwen/DeepSeek)",
+                "BERT (Fine-tuned PubMedBERT)",
+                "Baseline (TF-IDF)",
             ],
-            inputs=[question_box, mode_selector],
+            value="RAG (Retrieval + Qwen/DeepSeek)",
+            label="Model",
         )
+        submit_btn = gr.Button("Ask", variant="primary")
+
+        answer_box = gr.Textbox(label="Answer", lines=4, interactive=False)
+        sources_box = gr.Textbox(label="Sources", lines=6, interactive=False)
 
         submit_btn.click(
             fn=answer_question,
@@ -146,7 +168,18 @@ def build_ui() -> gr.Blocks:
 
 def main():
     demo = build_ui()
-    demo.launch(server_name="0.0.0.0", server_port=7860, share=False)
+    demo.launch(
+        server_name="127.0.0.1",
+        server_port=7860,
+        share=False,
+        theme=gr.themes.Default(
+            primary_hue="blue",
+            secondary_hue="blue",
+            neutral_hue="slate",
+            font=["Times New Roman", "Times", "serif"],
+        ),
+        css=CSS,
+    )
 
 
 if __name__ == "__main__":

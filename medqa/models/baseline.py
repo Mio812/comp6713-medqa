@@ -110,19 +110,30 @@ class TFIDFBaseline:
         return [self.predict(q) for q in queries]
 
 
+_SENT_SPLIT_RE = None
+
+
+def _split_sentences(text: str) -> list:
+    """Lightweight sentence splitter — no NLTK / network dependency.
+
+    Good enough for TF-IDF baseline: splits on '.', '!', '?' followed by
+    whitespace, with a few common-abbreviation guards.
+    """
+    import re
+    global _SENT_SPLIT_RE
+    if _SENT_SPLIT_RE is None:
+        # Split after .!? followed by whitespace; keep punctuation with the
+        # preceding sentence. Not as accurate as Punkt but zero-dep and fast.
+        _SENT_SPLIT_RE = re.compile(r"(?<=[.!?])\s+(?=[A-Z0-9])")
+    text = text.strip()
+    if not text:
+        return []
+    return [s.strip() for s in _SENT_SPLIT_RE.split(text) if s.strip()]
+
+
 def _extract_best_sentence(query: str, context: str, vectorizer: TfidfVectorizer) -> str:
     """Split context into sentences and return the one most similar to query."""
-    import nltk
-
-    # NLTK >= 3.8.2 also requires punkt_tab.
-    for resource in ("tokenizers/punkt", "tokenizers/punkt_tab"):
-        try:
-            nltk.data.find(resource)
-        except LookupError:
-            nltk.download(resource.split("/")[-1], quiet=True)
-
-    from nltk.tokenize import sent_tokenize
-    sentences = sent_tokenize(context)
+    sentences = _split_sentences(context)
     if not sentences:
         return context
 
