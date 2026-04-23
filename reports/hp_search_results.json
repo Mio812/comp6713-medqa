@@ -1,0 +1,297 @@
+{
+  "study_name": "pubmedbert_hp",
+  "storage": "sqlite:///C:/Users/Mio/Documents/comp6713-medqa/checkpoints/hp_search/optuna.sqlite3",
+  "n_trials": 15,
+  "best_trial": 14,
+  "best_value": 0.8135746717453003,
+  "best_params": {
+    "learning_rate": 4.540411109884664e-05,
+    "num_train_epochs": 4,
+    "per_device_train_batch_size": 16,
+    "warmup_ratio": 0.0323912554147713,
+    "weight_decay": 0.00028422631329700444,
+    "focal_gamma": 2.609907219130826,
+    "label_smoothing": 0.02242775243610238
+  },
+  "defaults": {
+    "learning_rate": 2e-05,
+    "num_train_epochs": 3,
+    "per_device_train_batch_size": 16,
+    "warmup_ratio": 0.06,
+    "weight_decay": 0.01,
+    "focal_gamma": 2.0,
+    "label_smoothing": 0.1
+  },
+  "trials": [
+    {
+      "number": 0,
+      "state": "COMPLETE",
+      "value": 2.6208319664001465,
+      "params": {
+        "learning_rate": 1.827226177606625e-05,
+        "num_train_epochs": 4,
+        "per_device_train_batch_size": 8,
+        "warmup_ratio": 0.023402796066365476,
+        "weight_decay": 0.00029375384576328325,
+        "focal_gamma": 0.17425083650459838,
+        "label_smoothing": 0.17323522915498704
+      },
+      "user_attrs": {
+        "train_loss": 3.252863259748979,
+        "trial_dir": "C:\\Users\\Mio\\Documents\\comp6713-medqa\\checkpoints\\hp_search\\trial_000"
+      }
+    },
+    {
+      "number": 1,
+      "state": "COMPLETE",
+      "value": 1.7372740507125854,
+      "params": {
+        "learning_rate": 2.631245451057452e-05,
+        "num_train_epochs": 4,
+        "per_device_train_batch_size": 16,
+        "warmup_ratio": 0.12486639612006326,
+        "weight_decay": 0.0004335281794951569,
+        "focal_gamma": 0.5454749016213019,
+        "label_smoothing": 0.03668090197068676
+      },
+      "user_attrs": {
+        "train_loss": 2.9520308801106045,
+        "trial_dir": "C:\\Users\\Mio\\Documents\\comp6713-medqa\\checkpoints\\hp_search\\trial_001"
+      }
+    },
+    {
+      "number": 2,
+      "state": "COMPLETE",
+      "value": 2.132786989212036,
+      "params": {
+        "learning_rate": 1.6317596956423427e-05,
+        "num_train_epochs": 3,
+        "per_device_train_batch_size": 8,
+        "warmup_ratio": 0.09177793420835692,
+        "weight_decay": 0.00026210878782654407,
+        "focal_gamma": 0.8764339456056545,
+        "label_smoothing": 0.07327236865873835
+      },
+      "user_attrs": {
+        "train_loss": 3.3415414867979107,
+        "trial_dir": "C:\\Users\\Mio\\Documents\\comp6713-medqa\\checkpoints\\hp_search\\trial_002"
+      }
+    },
+    {
+      "number": 3,
+      "state": "COMPLETE",
+      "value": 1.7502044439315796,
+      "params": {
+        "learning_rate": 2.083431561152948e-05,
+        "num_train_epochs": 4,
+        "per_device_train_batch_size": 16,
+        "warmup_ratio": 0.08886218532930637,
+        "weight_decay": 0.000137832374550072,
+        "focal_gamma": 1.822634555704315,
+        "label_smoothing": 0.03410482473745831
+      },
+      "user_attrs": {
+        "train_loss": 3.0968731301171437,
+        "trial_dir": "C:\\Users\\Mio\\Documents\\comp6713-medqa\\checkpoints\\hp_search\\trial_003"
+      }
+    },
+    {
+      "number": 4,
+      "state": "COMPLETE",
+      "value": 1.8706753253936768,
+      "params": {
+        "learning_rate": 1.1103735608516824e-05,
+        "num_train_epochs": 4,
+        "per_device_train_batch_size": 8,
+        "warmup_ratio": 0.0456920653760056,
+        "weight_decay": 0.00019634341572933326,
+        "focal_gamma": 2.052699079536471,
+        "label_smoothing": 0.08803049874792027
+      },
+      "user_attrs": {
+        "train_loss": 3.146166922829368,
+        "trial_dir": "C:\\Users\\Mio\\Documents\\comp6713-medqa\\checkpoints\\hp_search\\trial_004"
+      }
+    },
+    {
+      "number": 5,
+      "state": "COMPLETE",
+      "value": 3.5219666957855225,
+      "params": {
+        "learning_rate": 1.2170293883738781e-05,
+        "num_train_epochs": 3,
+        "per_device_train_batch_size": 16,
+        "warmup_ratio": 0.03881699724000254,
+        "weight_decay": 0.009717775305059635,
+        "focal_gamma": 0.9351332282682329,
+        "label_smoothing": 0.10401360423556216
+      },
+      "user_attrs": {
+        "train_loss": 4.782961890811012,
+        "trial_dir": "C:\\Users\\Mio\\Documents\\comp6713-medqa\\checkpoints\\hp_search\\trial_005"
+      }
+    },
+    {
+      "number": 6,
+      "state": "COMPLETE",
+      "value": 2.3247900009155273,
+      "params": {
+        "learning_rate": 2.4106495902171624e-05,
+        "num_train_epochs": 2,
+        "per_device_train_batch_size": 8,
+        "warmup_ratio": 0.14092484123462837,
+        "weight_decay": 0.04835952776465952,
+        "focal_gamma": 1.7936999364332555,
+        "label_smoothing": 0.18437484700462337
+      },
+      "user_attrs": {
+        "train_loss": 3.781110330061479,
+        "trial_dir": "C:\\Users\\Mio\\Documents\\comp6713-medqa\\checkpoints\\hp_search\\trial_006"
+      }
+    },
+    {
+      "number": 7,
+      "state": "COMPLETE",
+      "value": 4.5976715087890625,
+      "params": {
+        "learning_rate": 1.1530645080977555e-05,
+        "num_train_epochs": 2,
+        "per_device_train_batch_size": 16,
+        "warmup_ratio": 0.0583015934534223,
+        "weight_decay": 0.0006516990611177178,
+        "focal_gamma": 2.486212527455788,
+        "label_smoothing": 0.07135066533871785
+      },
+      "user_attrs": {
+        "train_loss": 5.3839855534689764,
+        "trial_dir": "C:\\Users\\Mio\\Documents\\comp6713-medqa\\checkpoints\\hp_search\\trial_007"
+      }
+    },
+    {
+      "number": 8,
+      "state": "COMPLETE",
+      "value": 2.4665281772613525,
+      "params": {
+        "learning_rate": 1.5716824201651505e-05,
+        "num_train_epochs": 3,
+        "per_device_train_batch_size": 16,
+        "warmup_ratio": 0.011182596551965624,
+        "weight_decay": 0.09133995846860977,
+        "focal_gamma": 2.3167343078899725,
+        "label_smoothing": 0.03974313630683449
+      },
+      "user_attrs": {
+        "train_loss": 4.065659295944941,
+        "trial_dir": "C:\\Users\\Mio\\Documents\\comp6713-medqa\\checkpoints\\hp_search\\trial_008"
+      }
+    },
+    {
+      "number": 9,
+      "state": "COMPLETE",
+      "value": 2.8691234588623047,
+      "params": {
+        "learning_rate": 1.0089271157862022e-05,
+        "num_train_epochs": 4,
+        "per_device_train_batch_size": 16,
+        "warmup_ratio": 0.11569055200289186,
+        "weight_decay": 0.0001667761543019791,
+        "focal_gamma": 1.0753971856328177,
+        "label_smoothing": 0.023173811905025946
+      },
+      "user_attrs": {
+        "train_loss": 4.422692537307739,
+        "trial_dir": "C:\\Users\\Mio\\Documents\\comp6713-medqa\\checkpoints\\hp_search\\trial_009"
+      }
+    },
+    {
+      "number": 10,
+      "state": "COMPLETE",
+      "value": 2.5417940616607666,
+      "params": {
+        "learning_rate": 2.2458681445572412e-05,
+        "num_train_epochs": 3,
+        "per_device_train_batch_size": 16,
+        "warmup_ratio": 0.14860940697222794,
+        "weight_decay": 0.01712342070024338,
+        "focal_gamma": 0.08999804990517585,
+        "label_smoothing": 0.04057668180439521
+      },
+      "user_attrs": {
+        "train_loss": 3.922684805733817,
+        "trial_dir": "C:\\Users\\Mio\\Documents\\comp6713-medqa\\checkpoints\\hp_search\\trial_010"
+      }
+    },
+    {
+      "number": 11,
+      "state": "COMPLETE",
+      "value": 1.8198565244674683,
+      "params": {
+        "learning_rate": 2.8880068439999607e-05,
+        "num_train_epochs": 4,
+        "per_device_train_batch_size": 16,
+        "warmup_ratio": 0.12257307391628011,
+        "weight_decay": 0.0001573119460141945,
+        "focal_gamma": 0.46836036138046777,
+        "label_smoothing": 0.052511700099000615
+      },
+      "user_attrs": {
+        "train_loss": 2.9425948006766185,
+        "trial_dir": "C:\\Users\\Mio\\Documents\\comp6713-medqa\\checkpoints\\hp_search\\trial_011"
+      }
+    },
+    {
+      "number": 12,
+      "state": "COMPLETE",
+      "value": 0.9810001850128174,
+      "params": {
+        "learning_rate": 4.231090951636992e-05,
+        "num_train_epochs": 4,
+        "per_device_train_batch_size": 16,
+        "warmup_ratio": 0.04396425092275356,
+        "weight_decay": 0.00037933808809006135,
+        "focal_gamma": 2.2903838915253916,
+        "label_smoothing": 0.05261677647990841
+      },
+      "user_attrs": {
+        "train_loss": 1.9186460290636336,
+        "trial_dir": "C:\\Users\\Mio\\Documents\\comp6713-medqa\\checkpoints\\hp_search\\trial_012"
+      }
+    },
+    {
+      "number": 13,
+      "state": "COMPLETE",
+      "value": 1.00797438621521,
+      "params": {
+        "learning_rate": 4.8915135999528305e-05,
+        "num_train_epochs": 3,
+        "per_device_train_batch_size": 16,
+        "warmup_ratio": 0.017853088498307194,
+        "weight_decay": 0.0001620239315000198,
+        "focal_gamma": 2.4628806468422177,
+        "label_smoothing": 0.05438803838087034
+      },
+      "user_attrs": {
+        "train_loss": 2.279642718178885,
+        "trial_dir": "C:\\Users\\Mio\\Documents\\comp6713-medqa\\checkpoints\\hp_search\\trial_013"
+      }
+    },
+    {
+      "number": 14,
+      "state": "COMPLETE",
+      "value": 0.8135746717453003,
+      "params": {
+        "learning_rate": 4.540411109884664e-05,
+        "num_train_epochs": 4,
+        "per_device_train_batch_size": 16,
+        "warmup_ratio": 0.0323912554147713,
+        "weight_decay": 0.00028422631329700444,
+        "focal_gamma": 2.609907219130826,
+        "label_smoothing": 0.02242775243610238
+      },
+      "user_attrs": {
+        "train_loss": 1.8233258426189423,
+        "trial_dir": "C:\\Users\\Mio\\Documents\\comp6713-medqa\\checkpoints\\hp_search\\trial_014"
+      }
+    }
+  ]
+}

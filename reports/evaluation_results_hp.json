@@ -1,0 +1,118 @@
+{
+  "Baseline (TF-IDF)": {
+    "n": 200,
+    "EM": 0.0,
+    "F1": 0.02201712913662018,
+    "BERTScore": 0.7793483138084412,
+    "ROUGE-L": 0.020940412327440098,
+    "YesNo_Acc": 0.0,
+    "YesNo_N": 8,
+    "YesNo_Uncategorised": 8,
+    "per_source": {
+      "medqa_usmle": {
+        "n": 103,
+        "mean_em": 0.0,
+        "mean_f1": 0.00839040999119309
+      },
+      "pubmedqa": {
+        "n": 8,
+        "mean_em": 0.0,
+        "mean_f1": 0.0
+      },
+      "bioasq": {
+        "n": 89,
+        "mean_em": 0.0,
+        "mean_f1": 0.039766444923945495
+      }
+    }
+  },
+  "Fine-tuned PubMedBERT": {
+    "n": 200,
+    "EM": 0.345,
+    "F1": 0.36545438135521313,
+    "BERTScore": 0.8493898510932922,
+    "ROUGE-L": 0.36523628677238285,
+    "YesNo_Acc": 0.375,
+    "YesNo_N": 8,
+    "YesNo_Uncategorised": 0,
+    "per_source": {
+      "medqa_usmle": {
+        "n": 103,
+        "mean_em": 0.04854368932038835,
+        "mean_f1": 0.06981433272856938
+      },
+      "pubmedqa": {
+        "n": 8,
+        "mean_em": 0.0,
+        "mean_f1": 0.1875
+      },
+      "bioasq": {
+        "n": 89,
+        "mean_em": 0.7191011235955056,
+        "mean_f1": 0.7235955056179776
+      }
+    }
+  },
+  "LLM + gold context": {
+    "n": 200,
+    "EM": 0.19,
+    "F1": 0.40988825770701653,
+    "BERTScore": 0.8864694237709045,
+    "ROUGE-L": 0.4100413766090471,
+    "YesNo_Acc": 0.375,
+    "YesNo_N": 8,
+    "YesNo_Uncategorised": 0,
+    "per_source": {
+      "medqa_usmle": {
+        "n": 103,
+        "mean_em": 0.019417475728155338,
+        "mean_f1": 0.22553429605615785
+      },
+      "pubmedqa": {
+        "n": 8,
+        "mean_em": 0.375,
+        "mean_f1": 0.375
+      },
+      "bioasq": {
+        "n": 89,
+        "mean_em": 0.3707865168539326,
+        "mean_f1": 0.626377742108079
+      }
+    }
+  },
+  "Full RAG (retrieval + LLM)": {
+    "n": 200,
+    "EM": 0.09,
+    "F1": 0.11487083496176925,
+    "BERTScore": 0.8215669989585876,
+    "ROUGE-L": 0.11349988916909233,
+    "YesNo_Acc": 0.25,
+    "YesNo_N": 8,
+    "YesNo_Uncategorised": 0,
+    "per_source": {
+      "medqa_usmle": {
+        "n": 103,
+        "mean_em": 0.0,
+        "mean_f1": 0.04440938827528009
+      },
+      "pubmedqa": {
+        "n": 8,
+        "mean_em": 0.25,
+        "mean_f1": 0.25
+      },
+      "bioasq": {
+        "n": 89,
+        "mean_em": 0.1797752808988764,
+        "mean_f1": 0.1842696629213483
+      }
+    },
+    "Retrieval": {
+      "recall@1": 0.155,
+      "recall@3": 0.21,
+      "recall@5": 0.21,
+      "recall@10": 0.21,
+      "mrr": 0.17833333333333332,
+      "n": 200
+    }
+  }
+}
