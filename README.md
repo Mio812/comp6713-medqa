@@ -4,6 +4,8 @@ A system that answers medical questions by retrieving evidence from PubMed liter
 
 ---
 
+github repository URL: https://github.com/Mio812/comp6713-medqa#
+
 ## Table of Contents
 
 1. [Overview](#1-overview)
