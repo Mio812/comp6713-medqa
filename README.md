@@ -1,10 +1,22 @@
 # MedQA: Medical Literature Question Answering System
 
+**Team:** Alearner
+
+**Members:**
+
+| Name | zID |
+|------|-----|
+| Yuyi Zhu | z5629988 |
+| Songning Liu | z5666368 |
+| Ian Zhao | z5668661 |
+| Wanxin Ma | z5695666 |
+| Muyi Yang | z5656930 |
+
 A system that answers medical questions by retrieving evidence from PubMed literature and generating grounded responses. Three backends are implemented and compared: a TF-IDF baseline, a fine-tuned PubMedBERT model, and a full RAG (Retrieval-Augmented Generation) pipeline.
 
 ---
 
-github repository URL: https://github.com/Mio812/comp6713-medqa#
+GitHub repository URL: https://github.com/Mio812/comp6713-medqa
 
 ## Table of Contents
 
