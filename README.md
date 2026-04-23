@@ -457,7 +457,7 @@ All hyperparameters are centralised in `medqa/config.py`.
 
 ### BERT Fine-tuning
 
-Learning rate, batch size, and epochs follow fairly standard BERT fine-tuning choices: `2e-5` for stability, three epochs before we start overfitting the 1k PubMedQA labelled set, and batch size 16 as the largest that fits in 16 GB VRAM with fp16 + 512-token sequences. `stride = 128` (a quarter of `max_length`) is a deliberate trade-off — a larger stride produces fewer training windows per context but risks dropping answer spans near a chunk boundary.
+Learning rate, batch size, and epochs follow fairly standard BERT fine-tuning choices: `2e-5` for stability, three epochs before we start overfitting the 1k PubMedQA labelled set, and batch size 16 as the largest that fits in 16 GB VRAM with fp16 + 512-token sequences. `stride = 128` (a quarter of `max_length`) is a deliberate trade-off - a larger stride produces fewer training windows per context but risks dropping answer spans near a chunk boundary.
 
 | Hyperparameter | Value |
 |----------------|-------|
@@ -472,7 +472,7 @@ Learning rate, batch size, and epochs follow fairly standard BERT fine-tuning ch
 
 ### RAG / Vector Store
 
-`chunk_size = 512 chars` is aligned with BERT's 512-token budget so the same chunks can be reused by an extractive backend if we ever bolt one on. The other number worth justifying is `rerank_top_k = 3`: the cross-encoder's top three is roughly 1,500 chars, and §9.5 showed that keeping more chunks after reranking does not help the LLM — extra chunks just add noise. The remaining values are routine defaults.
+`chunk_size = 512 chars` is aligned with BERT's 512-token budget so the same chunks can be reused by an extractive backend if we ever bolt one on. The other number worth justifying is `rerank_top_k = 3`: the cross-encoder's top three is roughly 1,500 chars, and §9.5 showed that keeping more chunks after reranking does not help the LLM - extra chunks just add noise. The remaining values are routine defaults.
 
 | Hyperparameter | Value |
 |----------------|-------|
@@ -723,7 +723,7 @@ Full float16 inference of Qwen2.5-14B requires about 28 GB VRAM. NF4 quantisatio
 
 ### No end-to-end RAG fine-tuning
 
-End-to-end RAG training requires differentiable retrieval and large batches of `(question, supporting documents, answer)` triples. Our combined dataset of ~21k samples is too small for that to be stable, so the retriever and LLM are both kept fixed. This also made the ablation in §9.5 clean to interpret — each component is toggled in isolation.
+End-to-end RAG training requires differentiable retrieval and large batches of `(question, supporting documents, answer)` triples. Our combined dataset of ~21k samples is too small for that to be stable, so the retriever and LLM are both kept fixed. This also made the ablation in §9.5 clean to interpret - each component is toggled in isolation.
 
 ### Two-stage retrieval (bi-encoder + cross-encoder)
 
@@ -737,7 +737,7 @@ Without this the LLM writes full sentences on PubMedQA and scores EM near 0.02 (
 
 - Unified `{question, context, answer, answer_type, source}` schema across all three loaders, so evaluation / CLI / Gradio are backend-agnostic.
 - ChromaDB over FAISS: at ~62k chunks the recall and latency are indistinguishable; ChromaDB just auto-persists the index, saving us some boilerplate.
-- Greedy decoding (`do_sample=False`) for deterministic outputs — required for clean metric comparisons.
+- Greedy decoding (`do_sample=False`) for deterministic outputs - required for clean metric comparisons.
 - scispaCy (`en_core_sci_lg`) + UMLS for entity linking, instead of general-purpose NER, because medical entities aren't well covered by the standard spaCy models.
 
 ---
