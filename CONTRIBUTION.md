@@ -4,11 +4,6 @@ Total contribution score: **100**
 
 ## Basis and Method
 
-This allocation is based on team discussions and a review of actual project outputs:
-
-- Code-related work is referenced from the project repository contents (implementation, debugging traces, and runnable scripts).
-- Report-related work is referenced from `report(3).docx`.
-- Presentation-related work is evaluated based on preparation and completion responsibility.
 
 ## Member Allocation
 
@@ -30,10 +25,15 @@ This allocation is based on team discussions and a review of actual project outp
     - Organized written project outcomes into final report format.
   - Contribution note: carried the main responsibility for report preparation and documentation quality.
 
-- **z5656930@ad.unsw.edu.au** and **z5695666@ad.unsw.edu.au**: **18 (shared)**
-  - Joint allocation for the remaining score.
-  - Note: no significant individual contribution was identified from code and report evidence.
-  - Allocation explanation: the remaining score is shared between both members due to limited observable output.
+- **z5695666@ad.unsw.edu.au**: **13**
+  - Responsibilities:
+    - Actively participated in team discussions and coordination.
+  - Contribution note: score adjusted upward due to positive and consistent discussion participation.
+
+- **z5656930@ad.unsw.edu.au**: **6**
+  - Responsibilities:
+    - Received the remaining score after allocating all other members.
+  - Allocation explanation: computed as `100 - (27 + 27 + 27 + 13) = 6`.
 
 ## Final Statement
 
