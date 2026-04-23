@@ -457,27 +457,31 @@ All hyperparameters are centralised in `medqa/config.py`.
 
 ### BERT Fine-tuning
 
-| Hyperparameter | Value | Rationale |
-|----------------|-------|-----------|
-| `learning_rate` | 2e-5 | Standard range for BERT fine-tuning. Lower (1e-5) converges too slowly; higher (5e-5) risks catastrophic forgetting on small datasets. |
-| `num_train_epochs` | 3 | Sufficient for convergence on ~16k combined samples; more epochs risk overfitting the 1k PubMedQA labelled set. |
-| `per_device_train_batch_size` | 16 | Maximum that fits in 16 GB VRAM with fp16 and 512-token sequences. |
-| `warmup_steps` | 500 | Around 3% of total training steps. Prevents large gradient updates before model weights stabilise. |
-| `weight_decay` | 0.01 | L2 regularisation on non-bias parameters. |
-| `max_length` | 512 | BERT's hard token limit. |
-| `stride` | 128 | 25% of max_length. Trades more training windows for better answer coverage. |
-| `fp16` | auto (GPU) | Mixed-precision: about 2x memory saving, 1.5x speed-up, with negligible accuracy change. |
+Learning rate, batch size, and epochs follow fairly standard BERT fine-tuning choices: `2e-5` for stability, three epochs before we start overfitting the 1k PubMedQA labelled set, and batch size 16 as the largest that fits in 16 GB VRAM with fp16 + 512-token sequences. `stride = 128` (a quarter of `max_length`) is a deliberate trade-off — a larger stride produces fewer training windows per context but risks dropping answer spans near a chunk boundary.
+
+| Hyperparameter | Value |
+|----------------|-------|
+| `learning_rate` | 2e-5 |
+| `num_train_epochs` | 3 |
+| `per_device_train_batch_size` | 16 |
+| `warmup_steps` | 500 |
+| `weight_decay` | 0.01 |
+| `max_length` | 512 |
+| `stride` | 128 |
+| `fp16` | auto (GPU) |
 
 ### RAG / Vector Store
 
-| Hyperparameter | Value | Rationale |
-|----------------|-------|-----------|
-| `chunk_size` | 512 chars | Aligns with BERT's token budget; keeps each chunk on a single sub-topic. |
-| `chunk_overlap` | 64 chars | About 12% overlap. Prevents information loss when a sentence is split across chunks. |
-| `retrieve_top_k` | 10 | Wide enough for the cross-encoder reranker to recover relevant chunks. |
-| `rerank_top_k` | 3 | About 1,500 chars, fits in the LLM context window without diluting the signal. |
-| `max_new_tokens` | 4 / 32 / 512 | Dispatched by `answer_type`: 4 for yes/no, 32 for factoid, 512 for free-form (§6.3). |
-| `temperature` | 0.0 (greedy) | Deterministic outputs for reproducible evaluation runs. |
+`chunk_size = 512 chars` is aligned with BERT's 512-token budget so the same chunks can be reused by an extractive backend if we ever bolt one on. The other number worth justifying is `rerank_top_k = 3`: the cross-encoder's top three is roughly 1,500 chars, and §9.5 showed that keeping more chunks after reranking does not help the LLM — extra chunks just add noise. The remaining values are routine defaults.
+
+| Hyperparameter | Value |
+|----------------|-------|
+| `chunk_size` | 512 chars |
+| `chunk_overlap` | 64 chars |
+| `retrieve_top_k` | 10 |
+| `rerank_top_k` | 3 |
+| `max_new_tokens` | 4 / 32 / 512 |
+| `temperature` | 0.0 (greedy) |
 
 ---
 
@@ -694,11 +698,11 @@ The HP search improves BioASQ slightly but regresses MedQA-USMLE more, so total 
 | query-exp + dense@5 | 0.033 | 0.051 | 0.814 | 0.083 | 0.083 | 0.083 |
 | query-exp + rerank@5 | 0.067 | 0.087 | 0.817 | 0.117 | 0.167 | 0.136 |
 
-Takeaways:
+The BGE cross-encoder reranker is worth keeping: on top of dense retrieval it lifts Recall@1 from 0.083 to 0.117, doubles Recall@3 (0.083 to 0.167) and raises MRR from 0.083 to 0.137, at a 3-4x per-query latency cost.
 
-1. The BGE cross-encoder reranker is worth keeping. Adding it on top of dense retrieval raises Recall@1 by 41% (0.083 to 0.117), doubles Recall@3 (0.083 to 0.167), and lifts MRR by 64% (0.083 to 0.137), with a 3-4x latency cost per query.
-2. UMLS query expansion is a negative finding on this dataset. In dense-only mode it halves EM (0.083 to 0.033); even with the reranker it underperforms raw queries (EM 0.067 vs 0.083). The expanded query dilutes the BGE-M3 embedding with canonical medical terms that shift the chunk distribution away from the topical match. The pipeline still supports the feature (it may help on patient-language queries the test set does not cover), but it is disabled by default in `run_eval.py` task 5b. A useful extension would be expansion conditional on entity-match confidence.
-3. Larger `rerank_top_k` helps retrieval but not generation. Moving from top-1 to top-5 after reranking lifts Recall@5 to 0.183 (raw-query) but leaves EM / F1 essentially flat, because the LLM already copes with context volume and extra chunks mostly add noise. We keep `rerank_top_k = 3` as a latency / recall compromise.
+UMLS query expansion didn't work out on this test set. In dense-only mode it halves EM (0.083 to 0.033), and even with the reranker it still trails raw queries (0.067 vs 0.083). The expanded query dilutes the BGE-M3 embedding with canonical medical terms that shift the chunk distribution away from the topical match. We left the feature in the pipeline (it may still help on patient-language queries, which this test set does not exercise) but disabled it by default in `run_eval.py` task 5b. Making expansion conditional on entity-match confidence is a plausible next step.
+
+Pushing `rerank_top_k` from 1 to 5 raises Recall@5 to 0.183 on raw queries but leaves EM/F1 essentially flat, because the LLM already handles the extra context and the added chunks mostly contribute noise. We settled on `rerank_top_k = 3` as a latency / recall compromise.
 
 Metric notes:
 
@@ -711,40 +715,30 @@ Metric notes:
 
 ## 10. Engineering Decisions
 
-### Unified data schema
-
-All three loaders return the same `{question, context, answer, answer_type, source}` dictionary, so the evaluation loop, CLI, and Gradio demo are backend-agnostic. Adding a fourth model requires only implementing `predict(question, context) -> dict`.
-
-### No end-to-end RAG fine-tuning
-
-End-to-end RAG training requires differentiable retrieval and large batches of `(question, supporting documents, answer)` triples. Our combined dataset of ~21k samples is insufficient for stable joint training. The current design (fixed retriever, fixed LLM) remains reproducible and interpretable.
-
-### ChromaDB over FAISS
-
-ChromaDB persists the index to disk automatically. FAISS requires manual serialisation and re-loading logic. At our scale (~62k chunks), ChromaDB's HNSW index provides millisecond retrieval with no perceptible latency difference from FAISS, while reducing boilerplate.
+A few design choices that are worth calling out in more detail.
 
 ### 4-bit quantisation (NF4)
 
-Full float16 inference of Qwen2.5-14B requires about 28 GB VRAM. NF4 quantisation with double quantisation (BitsAndBytes) reduces this to about 9 GB with an empirical accuracy drop below 2%, making the model runnable on a single consumer GPU.
+Full float16 inference of Qwen2.5-14B requires about 28 GB VRAM. NF4 quantisation with double quantisation (BitsAndBytes) reduces this to about 9 GB with an empirical accuracy drop below 2%, so the model runs on a single consumer GPU. Inference throughput is slightly lower than fp16 but not a bottleneck at our evaluation scale.
 
-### Greedy decoding (`do_sample=False`)
+### No end-to-end RAG fine-tuning
 
-Greedy decoding is deterministic: the same input always produces the same output. This is required for reproducible evaluation. Sampling-based decoding (nucleus sampling, beam search) would introduce variance across runs and make metric comparisons unreliable.
-
-### Answer-type-conditioned prompting
-
-Without it the LLM writes full sentences and scores EM near 0.02 on PubMedQA (gold label is the single token `yes`). Fixing the prompt keeps EM directly comparable across all three backends. The three templates (yesno / factoid / free) map onto the three gold-answer formats in the datasets.
+End-to-end RAG training requires differentiable retrieval and large batches of `(question, supporting documents, answer)` triples. Our combined dataset of ~21k samples is too small for that to be stable, so the retriever and LLM are both kept fixed. This also made the ablation in §9.5 clean to interpret — each component is toggled in isolation.
 
 ### Two-stage retrieval (bi-encoder + cross-encoder)
 
-- Bi-encoder (BGE-M3): encodes query and document independently. Retrieval is a vector dot product, scalable to millions of documents in milliseconds.
-- Cross-encoder (BGE-reranker): encodes the `(query, document)` pair jointly, allowing attention to flow between both inputs. More accurate but slower (O(n) forward passes).
+BGE-M3 encodes query and document independently, so retrieval is a vector dot product and scales to millions of documents in milliseconds. BGE-reranker then encodes the `(query, document)` pair jointly, allowing attention between the two inputs at the cost of O(n) forward passes. Running both in sequence is the standard RAG pattern at this scale; we retrieve 10 with the bi-encoder and hand the reranker the shortlist. Near-cross-encoder accuracy at near-bi-encoder speed.
 
-Using both stages in sequence gives near-cross-encoder accuracy at near-bi-encoder speed for the top-10 candidates.
+### Answer-type-conditioned prompting
 
-### scispaCy + UMLS over general NLP tools
+Without this the LLM writes full sentences on PubMedQA and scores EM near 0.02 (the gold label is the single token `yes`). Switching between yes/no, factoid, and free-form templates based on `answer_type` keeps EM directly comparable across all three backends. The three templates map cleanly onto the three gold-answer formats in the datasets.
 
-General-purpose NER tools (spaCy `en_core_web_lg`) are not trained on biomedical text and frequently miss or misclassify medical entities. `en_core_sci_lg` is trained on biomedical literature and directly supports UMLS linking, providing canonical concept IDs without any external API or registration.
+### Smaller choices
+
+- Unified `{question, context, answer, answer_type, source}` schema across all three loaders, so evaluation / CLI / Gradio are backend-agnostic.
+- ChromaDB over FAISS: at ~62k chunks the recall and latency are indistinguishable; ChromaDB just auto-persists the index, saving us some boilerplate.
+- Greedy decoding (`do_sample=False`) for deterministic outputs — required for clean metric comparisons.
+- scispaCy (`en_core_sci_lg`) + UMLS for entity linking, instead of general-purpose NER, because medical entities aren't well covered by the standard spaCy models.
 
 ---
 
