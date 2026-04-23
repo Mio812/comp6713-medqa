@@ -7,8 +7,8 @@
 | Name | zID |
 |------|-----|
 | Yuyi Zhu | z5629988 |
-| Songning Liu | z5666368 |
-| Ian Zhao | z5668661 |
+| Ian Zhao | z5666368 |
+| Songning Liu | z5668661 |
 | Wanxin Ma | z5695666 |
 | Muyi Yang | z5656930 |
 
